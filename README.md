@@ -62,7 +62,17 @@ cargo install --path crates/curator-cli   # 装到 PATH，之后直接敲 curato
 ```bash
 pnpm install
 pnpm tauri dev      # 开发模式（前端热更新）
-pnpm tauri build    # 打包可执行文件
+pnpm tauri build    # 打包可执行文件 —— 只认这一条
+```
+
+**不要用 `cargo build` 出包。** 它会得到"能编译、打开却显示 localhost 拒绝连接"的产物：
+没有 `custom-protocol` 特性时，tauri-build 会给编译器打上 `cfg(dev)`，运行时不去加载内嵌前端，
+而是去连 `http://localhost:1420`。为防再犯，release 构建缺少该特性时已用 `compile_error!` 直接拦下。
+
+只验证能否编译可以，但要带特性：
+
+```bash
+cargo build -p curator-desktop --features custom-protocol
 ```
 
 ## 清理与还原

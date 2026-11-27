@@ -6,6 +6,17 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// 拦住"能编译、但一打开就显示 ERR_CONNECTION_REFUSED"的包：
+// 没有 custom-protocol 时 tauri-build 会打上 cfg(dev)，运行时不加载内嵌前端，
+// 而是去连 http://localhost:1420。release 构建出现这种情况必然是构建命令写错了。
+#[cfg(all(dev, not(debug_assertions)))]
+compile_error!(
+    "release 构建必须启用 custom-protocol 特性。\n\
+     请用 `pnpm tauri build`（会自动加），或手工 `cargo build --release -p curator-desktop \
+     --features custom-protocol`。\n\
+     否则程序不会内嵌前端，用户打开只会看到「localhost 拒绝连接」。"
+);
+
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};

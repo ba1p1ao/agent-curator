@@ -92,10 +92,11 @@ jobs:
       - name: 构建前端
         run: pnpm build
 
-      # 只编译不打包：这一步验证 tauri-build 能生成资源、前端产物能被嵌入。
-      # 安装包与签名在 M4.5 单独处理（bundle.active 目前为 false）。
-      - name: 编译桌面壳
-        run: cargo build -p curator-desktop --locked
+      # 只编译不打包：验证 tauri-build 能生成资源、前端产物能被嵌入。
+      # 必须带 custom-protocol，否则编出来的是"去连 localhost"的开发模式产物。
+      # 用 debug 而非 release：同样会走资源内嵌路径，但省掉十分钟的优化编译。
+      - name: 编译桌面壳（生产资源内嵌）
+        run: cargo build -p curator-desktop --locked --features custom-protocol
 
       - name: 冒烟 · CLI 能加载规则库
         run: cargo run -p curator-cli --locked -- rules validate
