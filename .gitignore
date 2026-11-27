@@ -1,0 +1,6 @@
+/target
+/tools
+/reports
+*.log
+.DS_Store
+Thumbs.db

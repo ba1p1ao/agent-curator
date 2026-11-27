@@ -1,0 +1,218 @@
+# Codex 数据目录规则
+#
+# 注意：所有 sqlite 主库都配了 skip-if-locked。
+# 原因：-wal / -shm 必须与主库同批处理，且 agent 运行时持有文件锁，
+# 单方面删除会造成索引损坏。M2 执行器必须先做进程占用检测。
+
+schema_version: 1
+agent: codex
+display_name: Codex
+
+roots:
+  - id: home
+    path: "~/.codex"
+    probe: ["config.toml"]
+    note: Codex 全局数据目录
+
+rules:
+  # ---------- 用户资产 ----------
+  - id: codex.asset.instructions
+    path: "~/.codex/AGENTS.md"
+    class: asset
+    risk: critical
+    action: protect
+    note: 全局代理指令
+
+  - id: codex.asset.config
+    path: "~/.codex/config.toml"
+    class: asset
+    risk: critical
+    action: protect
+    note: 模型、MCP、沙箱配置
+
+  - id: codex.asset.skills
+    path: "~/.codex/skills/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: codex.asset.rules
+    path: "~/.codex/rules/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 用户自定义规则
+
+  - id: codex.asset.plugins
+    path: "~/.codex/plugins/**"
+    class: asset
+    risk: high
+    action: protect
+
+  - id: codex.asset.agents
+    path: "~/.codex/agents/**"
+    class: asset
+    risk: high
+    action: protect
+
+  - id: codex.asset.memories
+    path: "~/.codex/memories/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 长期记忆
+
+  - id: codex.asset.memories-db
+    path: "~/.codex/memories*.sqlite*"
+    class: asset
+    risk: critical
+    action: protect
+    note: 记忆库主文件，必须与 -wal/-shm 一起保留
+
+  # ---------- 可重建垃圾 ----------
+  - id: codex.ephemeral.cache
+    path: "~/.codex/cache/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 模型与工具缓存，可重建
+
+  - id: codex.ephemeral.tmp
+    path: "~/.codex/tmp/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: codex.ephemeral.sessions
+    path: "~/.codex/sessions/**"
+    class: ephemeral
+    risk: medium
+    action: clean
+    note: 会话回放记录 rollout jsonl，删除后无法回放历史
+
+  - id: codex.ephemeral.archived-sessions
+    path: "~/.codex/archived_sessions/**"
+    class: ephemeral
+    risk: medium
+    action: clean
+
+  - id: codex.ephemeral.browser
+    path: "~/.codex/browser/**"
+    class: ephemeral
+    risk: medium
+    action: clean
+    note: 内置浏览器 profile 与截图
+
+  - id: codex.ephemeral.computer-use
+    path: "~/.codex/computer-use/**"
+    class: ephemeral
+    risk: medium
+    action: clean
+    note: 屏幕操作记录与截图
+
+  - id: codex.ephemeral.node-repl
+    path: "~/.codex/node_repl/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: codex.ephemeral.ambient
+    path: "~/.codex/ambient-suggestions/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: codex.ephemeral.index
+    path: "~/.codex/session_index.jsonl"
+    class: ephemeral
+    risk: medium
+    action: clean
+    note: 会话索引，删除后会重建
+
+  - id: codex.ephemeral.dictation
+    path: "~/.codex/dictation-history*"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: codex.ephemeral.transcription
+    path: "~/.codex/transcription-history.jsonl"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  # ---------- sqlite 运行库：必须跳过占用 ----------
+  - id: codex.ephemeral.logs-db
+    path: "~/.codex/logs*.sqlite*"
+    class: ephemeral
+    risk: high
+    action: skip-if-locked
+    note: 运行日志库；agent 运行时持有锁，必须整组跳过
+
+  - id: codex.ephemeral.state-db
+    path: "~/.codex/state*.sqlite*"
+    class: ephemeral
+    risk: high
+    action: skip-if-locked
+    note: 状态库，删除后首次启动会重建
+
+  - id: codex.ephemeral.queue-db
+    path: "~/.codex/queue*.sqlite*"
+    class: ephemeral
+    risk: high
+    action: skip-if-locked
+
+  - id: codex.ephemeral.thread-history
+    path: "~/.codex/thread_history*.sqlite*"
+    class: ephemeral
+    risk: high
+    action: skip-if-locked
+    note: 线程历史，删除后旧对话不可检索
+
+  - id: codex.ephemeral.goals
+    path: "~/.codex/goals*.sqlite*"
+    class: ephemeral
+    risk: high
+    action: skip-if-locked
+
+  # ---------- 需人工确认 ----------
+  - id: codex.review.attachments
+    path: "~/.codex/attachments/**"
+    class: workspace
+    risk: high
+    action: review
+    note: 用户上传的附件，可能仍被引用
+
+  - id: codex.review.visualizations
+    path: "~/.codex/visualizations/**"
+    class: product
+    risk: medium
+    action: review
+    note: agent 生成的图表，可能是交付物
+
+  - id: codex.review.vendor
+    path: "~/.codex/vendor_imports/**"
+    class: product
+    risk: medium
+    action: review
+
+  - id: codex.review.pets
+    path: "~/.codex/pets/**"
+    class: product
+    risk: low
+    action: review
+
+  # ---------- 隐藏目录（实测占未识别体积的 95% 以上） ----------
+  - id: codex.runtime.sandbox-bin
+    path: "~/.codex/.sandbox-bin/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 沙箱执行器与命令运行器二进制，删除后 agent 无法执行命令
+
+  - id: codex.ephemeral.tmp-hidden
+    path: "~/.codex/.tmp/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 插件市场与 bundled 插件的临时解包目录，会自动重新下载

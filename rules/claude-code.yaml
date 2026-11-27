@@ -1,0 +1,132 @@
+# Claude Code 数据目录规则
+#
+# 分类原则：
+#   asset     = 用户长期积累，删除不可恢复 -> protect
+#   ephemeral = 删除仅丢历史或可重建        -> clean
+#   product   = 需要人判断的产物            -> review
+#
+# path 支持 `*`（不跨目录）与 `**`（跨目录）；`~` 会展开为真实主目录。
+
+schema_version: 1
+agent: claude-code
+display_name: Claude Code
+
+roots:
+  - id: home
+    path: "~/.claude"
+    probe: ["settings.json"]
+    note: Claude Code 全局数据目录
+
+rules:
+  # ---------- 用户资产：硬保护 ----------
+  - id: claude.asset.skills
+    path: "~/.claude/skills/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 用户安装或编写的 Skill，M2 应纳入备份清单
+
+  - id: claude.asset.agents
+    path: "~/.claude/agents/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 自定义子代理定义
+
+  - id: claude.asset.plugins
+    path: "~/.claude/plugins/**"
+    class: asset
+    risk: high
+    action: protect
+    note: 已安装插件，重装会丢配置
+
+  - id: claude.asset.memory
+    path: "~/.claude/CLAUDE.md"
+    class: asset
+    risk: critical
+    action: protect
+    note: 全局指令与长期偏好
+
+  - id: claude.asset.settings
+    path: "~/.claude/settings.json"
+    class: asset
+    risk: critical
+    action: protect
+    note: 权限与模型配置
+
+  - id: claude.asset.config
+    path: "~/.claude/config.json"
+    class: asset
+    risk: high
+    action: protect
+
+  # ---------- 可重建垃圾 ----------
+  - id: claude.ephemeral.cache
+    path: "~/.claude/cache/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 解析缓存，删除后自动重建
+
+  - id: claude.ephemeral.shell-snapshots
+    path: "~/.claude/shell-snapshots/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: shell 环境快照
+
+  - id: claude.ephemeral.session-env
+    path: "~/.claude/session-env/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: claude.ephemeral.telemetry
+    path: "~/.claude/telemetry/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 本地埋点日志
+
+  - id: claude.ephemeral.ide
+    path: "~/.claude/ide/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: IDE 集成握手文件
+
+  - id: claude.ephemeral.sessions
+    path: "~/.claude/sessions/**"
+    class: ephemeral
+    risk: medium
+    action: clean
+    note: 会话状态，删除后当前会话上下文丢失
+
+  - id: claude.ephemeral.projects
+    path: "~/.claude/projects/**"
+    class: ephemeral
+    risk: medium
+    action: clean
+    note: 按项目归档的会话转录 jsonl，删除后历史对话不可查看
+
+  - id: claude.ephemeral.history
+    path: "~/.claude/history.jsonl"
+    class: ephemeral
+    risk: medium
+    action: clean
+    note: 输入历史
+
+  - id: claude.ephemeral.downloads
+    path: "~/.claude/downloads/**"
+    class: ephemeral
+    risk: medium
+    action: clean
+    note: agent 下载的临时文件
+
+  # ---------- 需人工确认 ----------
+  - id: claude.review.backups
+    path: "~/.claude/backups/**"
+    class: ephemeral
+    risk: high
+    action: review
+    note: 配置快照，可能是旧版配置的唯一副本

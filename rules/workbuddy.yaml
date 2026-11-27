@@ -1,0 +1,247 @@
+# WorkBuddy 数据目录规则
+#
+# 这是本机体积最大的 agent 目录（实测 3.0 GB / 数万文件）。
+# 边界判断的关键：workspace / projects / blobs / storage 属于用户数据，
+# 一律 review，不允许默认勾选清理。
+
+schema_version: 1
+agent: workbuddy
+display_name: WorkBuddy
+
+roots:
+  - id: home
+    path: "~/.workbuddy"
+    probe: ["settings.json"]
+    note: WorkBuddy 全局数据目录
+
+rules:
+  # ---------- 运行时（删了软件会坏） ----------
+  - id: workbuddy.runtime.binaries
+    path: "~/.workbuddy/binaries/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 内置运行时（Node / Python / Git），删除会导致工具链不可用
+
+  - id: workbuddy.runtime.app
+    path: "~/.workbuddy/app/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  # ---------- 用户资产 ----------
+  - id: workbuddy.asset.skills
+    path: "~/.workbuddy/skills/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 用户 Skill，最需要备份的内容
+
+  - id: workbuddy.asset.plugins
+    path: "~/.workbuddy/plugins/**"
+    class: asset
+    risk: high
+    action: protect
+
+  - id: workbuddy.asset.connectors
+    path: "~/.workbuddy/connectors/**"
+    class: asset
+    risk: high
+    action: protect
+
+  - id: workbuddy.asset.memory
+    path: "~/.workbuddy/memory/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 长期记忆与工作日志
+
+  - id: workbuddy.asset.scripts
+    path: "~/.workbuddy/scripts/**"
+    class: asset
+    risk: high
+    action: protect
+
+  - id: workbuddy.asset.profile
+    path: "~/.workbuddy/user-*-personal/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 用户画像与个性化配置
+
+  - id: workbuddy.asset.identity
+    path: "~/.workbuddy/*.md"
+    class: asset
+    risk: critical
+    action: protect
+    note: MEMORY / USER / SOUL / IDENTITY / BOOTSTRAP 等身份文件
+
+  - id: workbuddy.asset.settings
+    path: "~/.workbuddy/settings.json"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: workbuddy.asset.models
+    path: "~/.workbuddy/models.json"
+    class: asset
+    risk: high
+    action: protect
+
+  - id: workbuddy.asset.mcp
+    path: "~/.workbuddy/mcp-*.json"
+    class: asset
+    risk: high
+    action: protect
+    note: MCP 配置与授权记录
+
+  # ---------- 可重建垃圾 ----------
+  - id: workbuddy.ephemeral.cache
+    path: "~/.workbuddy/cache/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: workbuddy.ephemeral.logs
+    path: "~/.workbuddy/logs/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: workbuddy.ephemeral.traces
+    path: "~/.workbuddy/traces/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 调用链追踪，排查完即可删
+
+  - id: workbuddy.ephemeral.telemetry
+    path: "~/.workbuddy/pending-telemetry/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: workbuddy.ephemeral.shell-snapshots
+    path: "~/.workbuddy/shell-snapshots/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: workbuddy.ephemeral.clipboard-images
+    path: "~/.workbuddy/clipboard-images/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 粘贴进对话的临时截图，单项体积往往很大
+
+  - id: workbuddy.ephemeral.sessions
+    path: "~/.workbuddy/sessions/**"
+    class: ephemeral
+    risk: medium
+    action: clean
+    note: 会话记录，删除后历史对话不可恢复
+
+  - id: workbuddy.ephemeral.file-history
+    path: "~/.workbuddy/file-history/**"
+    class: ephemeral
+    risk: medium
+    action: clean
+    note: 编辑快照，可用于回滚，删后只能靠 git
+
+  - id: workbuddy.ephemeral.changes
+    path: "~/.workbuddy/changes-*/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: workbuddy.ephemeral.marketplace
+    path: "~/.workbuddy/connectors-marketplace*/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 插件市场目录缓存，会自动重新拉取
+
+  - id: workbuddy.ephemeral.extension-registry
+    path: "~/.workbuddy/extension-registry/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: workbuddy.ephemeral.mods-store
+    path: "~/.workbuddy/mods-store/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: workbuddy.ephemeral.sandbox-ws
+    path: "~/.workbuddy/editor-sdk-sandbox-ws/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: workbuddy.ephemeral.upload-tmp
+    path: "~/.workbuddy/knowledge-upload-tmp/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  # ---------- 数据库：必须跳过占用 ----------
+  - id: workbuddy.ephemeral.db
+    path: "~/.workbuddy/*.db*"
+    class: ephemeral
+    risk: high
+    action: skip-if-locked
+    note: 核心索引库；程序运行时锁定，务必先退出 WorkBuddy
+
+  # ---------- 需人工确认 ----------
+  - id: workbuddy.review.workspace
+    path: "~/.workbuddy/workspace/**"
+    class: workspace
+    risk: high
+    action: review
+    note: 工作区数据，可能包含用户项目
+
+  - id: workbuddy.review.projects
+    path: "~/.workbuddy/projects/**"
+    class: workspace
+    risk: high
+    action: review
+
+  - id: workbuddy.review.space-history
+    path: "~/.workbuddy/space-history/**"
+    class: workspace
+    risk: medium
+    action: review
+
+  - id: workbuddy.review.blobs
+    path: "~/.workbuddy/blobs/**"
+    class: workspace
+    risk: high
+    action: review
+    note: 内容寻址存储，可能仍被会话引用
+
+  - id: workbuddy.review.storage
+    path: "~/.workbuddy/storage/**"
+    class: workspace
+    risk: high
+    action: review
+    note: 用户上传文件的落盘位置
+
+  - id: workbuddy.review.audit-log
+    path: "~/.workbuddy/audit-log/**"
+    class: ephemeral
+    risk: high
+    action: review
+    note: 操作审计日志，合规场景需保留
+
+  - id: workbuddy.review.indexes
+    path: "~/.workbuddy/artifact-index/**"
+    class: ephemeral
+    risk: medium
+    action: review
+
+  - id: workbuddy.review.file-tree
+    path: "~/.workbuddy/file-tree-manifests/**"
+    class: ephemeral
+    risk: medium
+    action: review

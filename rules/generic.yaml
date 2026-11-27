@@ -1,0 +1,79 @@
+# 通用项目级规则
+#
+# 这些规则不绑定具体厂商，用于匹配「工作区里被 agent 写下的文件」。
+# 优先级说明：protect(4) > skip-if-locked(3) > review(2) > clean(1)，
+# 因此厂商规则里的 protect 一定压过这里的 clean。
+
+schema_version: 1
+agent: generic
+display_name: 通用项目规则
+
+roots: []
+
+rules:
+  # ---------- 任何情况下都不许动 ----------
+  - id: generic.asset.workbuddy-memory
+    path: "**/.workbuddy/memory/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 项目级长期记忆，agent 靠它维持上下文
+
+  - id: generic.asset.claude-settings
+    path: "**/.claude/settings.json"
+    class: asset
+    risk: high
+    action: protect
+
+  - id: generic.asset.claude-md
+    path: "**/CLAUDE.md"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: generic.asset.agents-md
+    path: "**/AGENTS.md"
+    class: asset
+    risk: critical
+    action: protect
+
+  # ---------- agent 运行残留 ----------
+  - id: generic.ephemeral.playwright-mcp
+    path: "**/.playwright-mcp/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 浏览器自动化截图与 DOM 快照，单项体积常常很大
+
+  # ---------- 可重建产物 ----------
+  - id: generic.product.node-modules
+    path: "**/node_modules/**"
+    class: product
+    risk: medium
+    action: review
+    note: 可由 package.json 重建，但重装耗时
+
+  - id: generic.product.dist
+    path: "**/dist/**"
+    class: product
+    risk: low
+    action: review
+
+  - id: generic.product.build
+    path: "**/build/**"
+    class: product
+    risk: low
+    action: review
+
+  - id: generic.product.target
+    path: "**/target/**"
+    class: product
+    risk: low
+    action: review
+    note: Rust 编译中间产物
+
+  - id: generic.product.next
+    path: "**/.next/**"
+    class: product
+    risk: low
+    action: review

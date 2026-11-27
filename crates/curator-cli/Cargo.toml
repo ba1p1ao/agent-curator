@@ -1,0 +1,19 @@
+[package]
+name = "curator-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "AgentCurator 命令行入口（M1 只读体检）"
+repository.workspace = true
+
+[[bin]]
+name = "curator"
+path = "src/main.rs"
+
+[dependencies]
+curator-core = { path = "../curator-core" }
+anyhow.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+comfy-table.workspace = true
+chrono.workspace = true
