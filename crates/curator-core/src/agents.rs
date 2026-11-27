@@ -245,6 +245,10 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
 }
 
 /// 能否直接 spawn。Windows 上 .cmd/.bat 不能，必须经 cmd.exe。
+///
+/// 生产代码里只有 Windows 分支会用到它；非 Windows 平台仅由单元测试覆盖，
+/// 因此这里允许 dead_code，否则 `-D warnings` 会在 Linux/macOS 上直接报错。
+#[cfg_attr(not(windows), allow(dead_code))]
 fn is_direct_executable(path: &Path) -> bool {
     match path.extension().and_then(|e| e.to_str()) {
         None => true,
