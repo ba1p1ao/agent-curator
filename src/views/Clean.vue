@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ErrorPanel from "../components/ErrorPanel.vue";
 import { computed, ref } from "vue";
 import {
   api,
@@ -90,7 +91,7 @@ async function applyPlan() {
       </p>
     </div>
 
-    <div v-if="err" class="banner danger">{{ err }}</div>
+    <ErrorPanel v-if="err" :error="err" :retry="makePlan" />
 
     <div class="card">
       <h3 class="card-title">筛选条件</h3>

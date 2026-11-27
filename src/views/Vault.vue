@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ErrorPanel from "../components/ErrorPanel.vue";
 import { computed, onMounted, ref } from "vue";
 import {
   api,
@@ -68,7 +69,7 @@ onMounted(load);
       </p>
     </div>
 
-    <div v-if="err" class="banner danger">{{ err }}</div>
+    <ErrorPanel v-if="err" :error="err" :retry="load" />
 
     <div v-if="usage" class="banner info">
       隔离区 {{ usage.path }} · {{ usage.runs }} 个批次 · 占用 {{ humanBytes(usage.bytes) }}

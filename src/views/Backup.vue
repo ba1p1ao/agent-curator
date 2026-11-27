@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ErrorPanel from "../components/ErrorPanel.vue";
 import { onMounted, ref } from "vue";
 import {
   api,
@@ -75,7 +76,7 @@ onMounted(loadList);
       </p>
     </div>
 
-    <div v-if="err" class="banner danger">{{ err }}</div>
+    <ErrorPanel v-if="err" :error="err" :retry="create" />
 
     <div class="card">
       <h3 class="card-title">创建备份</h3>

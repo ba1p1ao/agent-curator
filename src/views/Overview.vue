@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ErrorPanel from "../components/ErrorPanel.vue";
 import { onMounted, ref } from "vue";
 import { api, classLabel, errorText, humanBytes, thousands, type ScanResult } from "../api";
 
@@ -33,7 +34,7 @@ onMounted(load);
       </p>
     </div>
 
-    <div v-if="err" class="banner danger">{{ err }}</div>
+    <ErrorPanel v-if="err" :error="err" :retry="load" />
 
     <div v-if="loading" class="empty">正在扫描…（首次约 2-10 秒）</div>
 
