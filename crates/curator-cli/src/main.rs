@@ -11,6 +11,7 @@ use anyhow::{bail, Context, Result};
 use chrono::Local;
 use clap::{Args, Parser, Subcommand};
 use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
+use curator_core::backup;
 use curator_core::plan::{self, PlanOptions};
 use curator_core::procs;
 use curator_core::quarantine::{Quarantine, DEFAULT_BIN_DIR};
@@ -21,6 +22,7 @@ use curator_core::util::{expand_tilde, home_dir, human_bytes, thousands, truncat
 
 const ENV_BIN_DIR: &str = "CURATOR_BIN_DIR";
 const ENV_RULES_DIR: &str = "CURATOR_RULES_DIR";
+const ENV_BACKUP_DIR: &str = "CURATOR_BACKUP_DIR";
 
 #[derive(Parser)]
 #[command(
@@ -45,6 +47,12 @@ enum Cmd {
     Bin(BinArgs),
     /// 规则库校验与查看
     Rules(RulesArgs),
+    /// 备份用户资产（skills / memory / 配置）
+    Backup(BackupArgs),
+    /// 校验备份包完整性
+    BackupVerify(BackupVerifyArgs),
+    /// 从备份包还原
+    BackupRestore(BackupRestoreArgs),
 }
 
 #[derive(Args)]
@@ -64,6 +72,46 @@ struct ScanArgs {
     /// 导出未识别文件清单（TSV：字节数<TAB>路径），用于迭代规则库
     #[arg(long, value_name = "FILE")]
     dump_unmatched: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct BackupArgs {
+    #[arg(long, value_name = "DIR")]
+    rules: Option<PathBuf>,
+    #[arg(long = "root", value_name = "PATH")]
+    roots: Vec<String>,
+    /// 只备份指定 agent（可重复）
+    #[arg(long = "agent", value_name = "ID")]
+    agent_filter: Vec<String>,
+    /// 只备份指定规则（可重复）
+    #[arg(long = "rule", value_name = "ID")]
+    rule_filter: Vec<String>,
+    /// 输出目录，默认 ~/curator-backups
+    #[arg(long, value_name = "DIR")]
+    out: Option<PathBuf>,
+    /// 包名标签，例如 before-upgrade
+    #[arg(long, value_name = "LABEL")]
+    label: Option<String>,
+}
+
+#[derive(Args)]
+struct BackupVerifyArgs {
+    /// 备份包路径
+    zip: PathBuf,
+}
+
+#[derive(Args)]
+struct BackupRestoreArgs {
+    /// 备份包路径
+    zip: PathBuf,
+    /// 还原到指定目录（保留原始路径结构），默认回到原始绝对路径
+    #[arg(long, value_name = "DIR")]
+    to: Option<PathBuf>,
+    /// 覆盖已存在的文件
+    #[arg(long)]
+    overwrite: bool,
+    #[arg(long)]
+    yes: bool,
 }
 
 #[derive(Args)]
@@ -162,6 +210,9 @@ fn main() -> Result<()> {
             RulesCmd::Validate(loc) => run_validate(loc),
             RulesCmd::List(loc) => run_list(loc),
         },
+        Cmd::Backup(args) => run_backup(args),
+        Cmd::BackupVerify(args) => run_backup_verify(args),
+        Cmd::BackupRestore(args) => run_backup_restore(args),
     }
 }
 
@@ -245,7 +296,21 @@ fn run_clean(args: CleanArgs) -> Result<()> {
     }
 
     // 进程检测必须在扫描之前：让用户知道这次结论是在什么前提下得出的
-    let running = procs::detect_running(&lib);
+    let running = match procs::detect_running(&lib) {
+        Ok(list) => list,
+        Err(e) => {
+            if !args.include_running {
+                bail!(
+                    "无法读取进程表，不能确认 agent 是否在运行：{}\n\
+                     为避免误删正在写入的数据，已中止。\n\
+                     确认相关 agent 已退出后，可加 --include-running 强制执行。",
+                    e
+                );
+            }
+            eprintln!("[警告] 进程检测失败（{}），按 --include-running 继续", e);
+            Vec::new()
+        }
+    };
     if !running.is_empty() {
         eprintln!("[注意] 检测到正在运行的 agent: {}", running.join(", "));
         if args.include_running {
@@ -258,6 +323,7 @@ fn run_clean(args: CleanArgs) -> Result<()> {
     eprintln!("扫描中 ...");
     let scan_opts = ScanOptions {
         collect_candidates: true,
+        ..Default::default()
     };
     let outcome =
         scanner::scan_with_opts(&targets, &lib, &scan_opts, print_scan_event);
@@ -414,6 +480,158 @@ fn print_runs(quarantine: &Quarantine) -> Result<()> {
     println!("{table}");
     println!("还原：curator restore <批次号>");
     Ok(())
+}
+
+// ---------------------------------------------------------------- backup
+
+fn run_backup(args: BackupArgs) -> Result<()> {
+    let rules_dir = resolve_rules_dir(args.rules.clone())?;
+    let lib = RuleLibrary::load_dir(&rules_dir)?;
+
+    let targets = build_targets(&args.roots, &lib);
+    if targets.is_empty() {
+        bail!("未发现任何 AI agent 数据目录，可用 --root <PATH> 指定");
+    }
+
+    eprintln!("扫描资产中 ...");
+    let scan_opts = ScanOptions {
+        collect_assets: true,
+        ..Default::default()
+    };
+    let outcome = scanner::scan_with_opts(&targets, &lib, &scan_opts, print_scan_event);
+
+    let nodes: Vec<_> = outcome
+        .candidates
+        .into_iter()
+        .filter(|n| {
+            (args.agent_filter.is_empty() || args.agent_filter.iter().any(|a| a == &n.agent))
+                && (args.rule_filter.is_empty()
+                    || n.rule_id
+                        .as_ref()
+                        .map(|r| args.rule_filter.iter().any(|w| w == r))
+                        .unwrap_or(false))
+        })
+        .collect();
+
+    if nodes.is_empty() {
+        bail!("没有匹配到任何资产条目（检查 --agent / --rule 过滤条件）");
+    }
+
+    let out_dir = resolve_backup_dir(args.out.clone());
+    let root_strings: Vec<String> = outcome
+        .roots
+        .iter()
+        .map(|r| r.path.clone())
+        .collect();
+
+    let report = backup::create(&nodes, &out_dir, args.label.as_deref(), &root_strings)?;
+
+    println!(
+        "备份完成：{} 项 / {} → {}",
+        thousands(report.entries as u64),
+        human_bytes(report.source_bytes),
+        human_bytes(report.zip_bytes)
+    );
+    if report.source_bytes > 0 {
+        let saved = 100.0 - (report.zip_bytes as f64 / report.source_bytes as f64 * 100.0);
+        println!("压缩比   {:.1}%", saved);
+    }
+    println!("备份包   {}", report.path.display());
+    println!("校验和   {}", &report.zip_sha256[..16]);
+    if !report.failures.is_empty() {
+        println!("\n{} 项读取失败（未写入备份）：", report.failures.len());
+        for (path, err) in report.failures.iter().take(10) {
+            println!("  - {} : {}", truncate(&path.to_string_lossy(), 56), err);
+        }
+    }
+    Ok(())
+}
+
+fn run_backup_verify(args: BackupVerifyArgs) -> Result<()> {
+    let manifest = backup::read_manifest(&args.zip)?;
+    println!("备份包   {}", args.zip.display());
+    println!(
+        "格式     v{} · {} · {}",
+        manifest.format_version,
+        manifest.tool,
+        manifest.created_at
+    );
+    println!("条目     {} 项", thousands(manifest.entries.len() as u64));
+
+    let report = backup::verify(&args.zip)?;
+    println!(
+        "校验     {} 通过 / {} 不匹配 / {} 缺失",
+        report.ok,
+        report.mismatched.len(),
+        report.missing.len()
+    );
+    for (name, detail) in report.mismatched.iter().take(10) {
+        println!("  不匹配 {} : {}", truncate(name, 50), detail);
+    }
+    for name in report.missing.iter().take(10) {
+        println!("  缺失   {}", truncate(name, 50));
+    }
+    if !report.mismatched.is_empty() || !report.missing.is_empty() {
+        bail!("备份包已损坏或被篡改");
+    }
+    Ok(())
+}
+
+fn run_backup_restore(args: BackupRestoreArgs) -> Result<()> {
+    let manifest = backup::read_manifest(&args.zip)?;
+    let bytes: u64 = manifest.entries.iter().map(|e| e.bytes).sum();
+    println!(
+        "备份包   {}  ·  {} 项 / {}",
+        args.zip.display(),
+        thousands(manifest.entries.len() as u64),
+        human_bytes(bytes)
+    );
+    match &args.to {
+        Some(dir) => println!("还原到   {}（按原始路径结构展开）", dir.display()),
+        None => println!("还原到   原始绝对路径"),
+    }
+    if args.overwrite {
+        println!("[注意] 已开启 --overwrite，同名文件会被覆盖");
+    }
+
+    if !args.yes {
+        let ok = confirm("\n确认还原？输入 yes 继续: ")?;
+        if !ok {
+            println!("已取消。");
+            return Ok(());
+        }
+    }
+
+    let report = backup::restore(&args.zip, args.to.as_deref(), args.overwrite)?;
+    println!(
+        "\n已还原 {} 项 / {}",
+        thousands(report.restored as u64),
+        human_bytes(report.bytes)
+    );
+    if !report.skipped.is_empty() {
+        println!("跳过 {} 项（目标已存在，未覆盖）：", report.skipped.len());
+        for (path, reason) in report.skipped.iter().take(10) {
+            println!("  - {} : {}", truncate(&path.to_string_lossy(), 56), reason);
+        }
+    }
+    if !report.failed.is_empty() {
+        println!("失败 {} 项：", report.failed.len());
+        for (path, err) in report.failed.iter().take(10) {
+            println!("  - {} : {}", truncate(&path.to_string_lossy(), 56), err);
+        }
+        bail!("部分条目还原失败");
+    }
+    Ok(())
+}
+
+fn resolve_backup_dir(arg: Option<PathBuf>) -> PathBuf {
+    if let Some(path) = arg {
+        return path;
+    }
+    if let Some(env) = std::env::var_os(ENV_BACKUP_DIR) {
+        return PathBuf::from(env);
+    }
+    home_dir().join("curator-backups")
 }
 
 // ---------------------------------------------------------------- rules

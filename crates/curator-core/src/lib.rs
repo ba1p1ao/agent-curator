@@ -4,6 +4,7 @@
 //! 不包含任何删除、移动或写入被扫描目录的代码路径。
 
 pub mod aggregate;
+pub mod backup;
 pub mod classifier;
 pub mod model;
 pub mod plan;

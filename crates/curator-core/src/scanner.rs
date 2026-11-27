@@ -49,7 +49,10 @@ pub struct ScanOutcome {
 /// 扫描行为开关。默认不保留节点，避免百万文件时内存爆炸。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ScanOptions {
+    /// 采集可清理候选（ephemeral / product / workspace）
     pub collect_candidates: bool,
+    /// 采集资产条目（备份用）
+    pub collect_assets: bool,
 }
 
 /// 扫描进度事件，供 CLI 输出到 stderr。
@@ -167,12 +170,13 @@ where
             let node = classify(&path, size, mtime, &target.agent, lib, now);
             agg.add(&node);
 
-            if opts.collect_candidates
+            let wanted = (opts.collect_candidates
                 && matches!(
                     node.class,
                     DataClass::Ephemeral | DataClass::Product | DataClass::Workspace
-                )
-            {
+                ))
+                || (opts.collect_assets && node.class == DataClass::Asset);
+            if wanted {
                 candidates.push(node);
             }
 

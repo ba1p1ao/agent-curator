@@ -162,7 +162,7 @@ impl RuleLibrary {
 
                 let glob = GlobBuilder::new(&pattern)
                     .literal_separator(true)
-                    .case_insensitive(cfg!(windows))
+                    .case_insensitive(cfg!(any(windows, target_os = "macos")))
                     .backslash_escape(false)
                     .build()
                     .with_context(|| {

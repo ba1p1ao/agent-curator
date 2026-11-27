@@ -76,6 +76,15 @@ pub struct RunManifest {
     pub planned_items: usize,
     pub total_bytes: u64,
     pub items: Vec<RunItem>,
+    /// 未能移入隔离区的条目（源文件未改动），用于事后审计
+    #[serde(default)]
+    pub failures: Vec<RunFailure>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunFailure {
+    pub original: PathBuf,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +161,7 @@ impl Quarantine {
             planned_items: plan.items.len(),
             total_bytes: plan.total_bytes(),
             items: Vec::new(),
+            failures: Vec::new(),
         };
         // 先把骨架落盘：即使下一秒崩溃，也能从 journal 恢复出真实状态
         write_json(&run_dir.join("manifest.json"), &manifest)?;
@@ -222,6 +232,15 @@ impl Quarantine {
                 }
             }
         }
+
+        manifest.failures = report
+            .failures
+            .iter()
+            .map(|(path, reason)| RunFailure {
+                original: path.clone(),
+                reason: reason.clone(),
+            })
+            .collect();
 
         manifest.status = if report.failures.is_empty() {
             RunStatus::Applied
@@ -322,8 +341,12 @@ impl Quarantine {
         };
         write_json(&run_dir.join("manifest.json"), &manifest)?;
 
-        // 空目录收尾
-        let _ = fs::remove_dir_all(ext(&run_dir.join("files")));
+        // 只有全部归位才删掉空壳。
+        // 存在冲突时绝不动 files/ —— 那里还躺着没还原成功的文件，
+        // 删掉就等于把用户唯一的一份数据抹了。
+        if report.restored == manifest.items.len() {
+            let _ = fs::remove_dir_all(ext(&run_dir.join("files")));
+        }
         Ok(report)
     }
 
@@ -420,7 +443,11 @@ fn ext(path: &Path) -> PathBuf {
 
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     let text = serde_json::to_string_pretty(value)?;
-    fs::write(ext(path), text).with_context(|| format!("写入失败: {}", path.display()))
+    // 先写临时文件再改名：manifest 是还原的唯一依据，不能出现半截 JSON
+    let tmp = path.with_extension("json.tmp");
+    fs::write(ext(&tmp), text).with_context(|| format!("写入失败: {}", tmp.display()))?;
+    fs::rename(ext(&tmp), ext(path))
+        .with_context(|| format!("提交失败: {}", path.display()))
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
@@ -518,6 +545,13 @@ mod tests {
         assert_eq!(restored.restored, 0);
         assert_eq!(restored.conflicts.len(), 1);
         assert_eq!(fs::read(&a).unwrap(), b"someone else");
+
+        // 关键：冲突的文件必须still 留在隔离区，不能被清理掉
+        let manifest = q.load_manifest(&report.run_id).unwrap();
+        assert!(
+            manifest.items[0].stored.exists(),
+            "还原冲突后，隔离区里的副本不能被删除"
+        );
     }
 
     #[test]

@@ -5,8 +5,9 @@
 `curator` 的本义是**典藏管理者**——给藏品编目、分类，决定哪些入库、哪些出库。
 这个工具做的正是这件事，而且**保管和清理同等重要**，不做只删不管的清理器。
 
-> **当前阶段：M2**
-> 支持只读体检（`scan`）与**可还原的清理**（`clean` / `restore`）。
+> **当前阶段：M3**
+> 支持只读体检（`scan`）、**可还原的清理**（`clean` / `restore`）、
+> **可校验的资产备份**（`backup` / `backup-verify` / `backup-restore`）。
 > 清理默认 dry-run，只有显式 `--apply` 才会移动文件，且一律进隔离区，不直接删除。
 
 ## 为什么不是普通的磁盘清理工具
@@ -41,6 +42,15 @@ cargo build --release
 
 # 反悔
 ./target/release/curator restore --last
+
+# 备份资产：打包 skills / memory / 配置
+./target/release/curator backup --label before-upgrade
+
+# 校验备份包（逐条比对 sha256）
+./target/release/curator backup-verify ~/curator-backups/agentcurator-xxx.zip
+
+# 换机还原到指定目录
+./target/release/curator backup-restore ~/curator-backups/agentcurator-xxx.zip --to D:/restore
 ```
 
 ## 清理与还原
@@ -78,6 +88,37 @@ $ curator clean
 `sessions/`、`logs/`、`*.sqlite`（还带 `-wal`/`-shm`），此时删除轻则会话损坏，
 重则索引库报废。确实要清就退出 agent，或显式加 `--include-running`。
 
+## 资产备份
+
+清理和备份是**两条方向相反的产品线**：清理挑"大而无价值"的，备份挑"小而不可再生"的，
+两份清单几乎不重叠。所以它们各自独立成命令，不共用一个按钮。
+
+```
+$ curator backup --agent claude-code --label verify
+备份完成：487 项 / 5.4 MB → 3.4 MB
+压缩比   38.0%
+备份包   ~/curator-backups/agentcurator-verify-20261127-182901.zip
+校验和   8e90f983c80cbfc1
+```
+
+备份包结构：
+
+```
+agentcurator-<label>-<时间>.zip
+├── agentcurator-manifest.json   每个文件的原始路径、体积、mtime、sha256
+└── C/Users/.../skills/...       按原始路径展开（去掉盘符冒号，保证跨平台）
+agentcurator-...zip.sha256       整包校验和，`sha256sum -c` 可直接用
+```
+
+三条约束：
+
+1. **只读源文件**。备份过程不改动、不移动任何原件。
+2. **逐条校验**。还原时比对 manifest 里的 sha256，不符就拒写，绝不把损坏内容盖回你的目录。
+3. **默认不覆盖**。目标已存在就跳过并列出，要覆盖必须显式 `--overwrite`。
+
+`backup` 只打包 `class: asset` 的条目——也就是 `skills/`、`agents/`、`memory/`、
+`CLAUDE.md`、`settings.json` 这一类删了不可再生的东西。缓存和会话记录不在备份范围内。
+
 ## 工程结构
 
 ```
@@ -91,6 +132,7 @@ crates/
     plan.rs              候选集 -> 清理计划（纯函数，可单测）
     procs.rs             进程检测（sysinfo）
     quarantine.rs        隔离区：移动、manifest、还原、清理
+    backup.rs            资产备份：zip + manifest.sha256 + 校验 + 还原
     report.rs            终端 / Markdown / JSON 报表
   curator-cli/           命令 `curator`：scan / clean / restore / bin / rules
 rules/                   规则库（YAML，运行时可改，无需重新编译）
@@ -132,14 +174,15 @@ rules/                   规则库（YAML，运行时可改，无需重新编译
 | 阶段 | 内容 |
 |---|---|
 | M1 ✅ | 只读扫描 + 规则库 + 体积归类 + 报告导出 |
-| **M2 ✅** | 清理计划、dry-run 清单、隔离区软删除与还原、进程占用检测 |
-| M3 | 资产备份（zip + manifest.sha256）、项目归档迁移 |
+| M2 ✅ | 清理计划、dry-run 清单、隔离区软删除与还原、进程占用检测 |
+| **M3 ✅** | 资产备份（zip + manifest + sha256）、完整性校验、跨机还原 |
+| M3.5 | 项目归档迁移（整目录打包 → 校验 → 异地解压） |
 | M4 | 桌面壳（Tauri 2 + Vue3）、安装包与签名、规则库云更新 |
 
 ## 开发
 
 ```bash
-cargo test            # 25 项单元测试
+cargo test            # 30 项单元测试
 cargo clippy --all-targets
 cargo fmt
 ```

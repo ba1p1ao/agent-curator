@@ -17,3 +17,5 @@ comfy-table.workspace = true
 dirs.workspace = true
 chrono.workspace = true
 sysinfo.workspace = true
+zip.workspace = true
+sha2.workspace = true

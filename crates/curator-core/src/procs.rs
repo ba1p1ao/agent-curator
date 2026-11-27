@@ -7,17 +7,18 @@
 
 use std::collections::BTreeSet;
 
+use anyhow::{anyhow, Result};
 use sysinfo::System;
 
 use crate::rules::RuleLibrary;
 
 /// 返回当前正在运行的 agent 标识列表。
-pub fn detect_running(lib: &RuleLibrary) -> Vec<String> {
+///
+/// 读取失败时返回 `Err` 而不是空列表：把"读不到"当成"没有运行"
+/// 会让调用方在 agent 正在写盘时误删数据，必须由上层决定怎么处理。
+pub fn detect_running(lib: &RuleLibrary) -> Result<Vec<String>> {
     let mut processes: BTreeSet<String> = BTreeSet::new();
-    let Ok(system) = System::new_all() else {
-        // 拿不到进程表时保守处理：按"没有运行中 agent"继续，但调用方应知晓风险
-        return Vec::new();
-    };
+    let system = System::new_all().map_err(|e| anyhow!("读取进程表失败: {}", e))?;
     for process in system.processes().values() {
         let name = process.name().to_string_lossy().to_ascii_lowercase();
         if !name.is_empty() {
@@ -25,9 +26,9 @@ pub fn detect_running(lib: &RuleLibrary) -> Vec<String> {
         }
     }
     if processes.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    match_agents(lib, &processes)
+    Ok(match_agents(lib, &processes))
 }
 
 /// 便于单测：不依赖真实进程表。
