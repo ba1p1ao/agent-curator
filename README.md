@@ -5,10 +5,10 @@
 `curator` 的本义是**典藏管理者**——给藏品编目、分类，决定哪些入库、哪些出库。
 这个工具做的正是这件事，而且**保管和清理同等重要**，不做只删不管的清理器。
 
-> **当前阶段：M3**
-> 支持只读体检（`scan`）、**可还原的清理**（`clean` / `restore`）、
-> **可校验的资产备份**（`backup` / `backup-verify` / `backup-restore`）。
-> 清理默认 dry-run，只有显式 `--apply` 才会移动文件，且一律进隔离区，不直接删除。
+> **当前阶段：M4**
+> 命令行（`curator scan / clean / restore / backup`）与**桌面端**（Tauri 2 + Vue3）双形态，
+> 共用同一套规则库、计划器与隔离区。
+> 清理永远先进隔离区，可随时还原；备份逐条校验 sha256。
 
 ## 为什么不是普通的磁盘清理工具
 
@@ -51,6 +51,14 @@ cargo build --release
 
 # 换机还原到指定目录
 ./target/release/curator backup-restore ~/curator-backups/agentcurator-xxx.zip --to D:/restore
+```
+
+桌面端：
+
+```bash
+pnpm install
+pnpm tauri dev      # 开发模式（前端热更新）
+pnpm tauri build    # 打包可执行文件
 ```
 
 ## 清理与还原
@@ -119,6 +127,26 @@ agentcurator-...zip.sha256       整包校验和，`sha256sum -c` 可直接用
 `backup` 只打包 `class: asset` 的条目——也就是 `skills/`、`agents/`、`memory/`、
 `CLAUDE.md`、`settings.json` 这一类删了不可再生的东西。缓存和会话记录不在备份范围内。
 
+## 桌面端
+
+界面只有四个页面：体检总览 / 清理 / 资产备份 / 隔离区。
+
+关键设计：**桌面端不做任何判断**。`src-tauri` 里的每个命令都只是把参数转给
+`curator-core`，然后返回 JSON——和 CLI 走的是同一套规则、同一个计划器、同一个隔离区。
+所以不会出现「GUI 删了东西，CLI 找不到批次」这种分裂。
+
+| 界面动作 | 底层复用 |
+|---|---|
+| 体检总览 | `scanner::scan` + `aggregates` |
+| 生成计划 | `plan::build`（含进程检测、review 过滤） |
+| 执行清理 | `quarantine::apply` |
+| 隔离区 / 还原 | `quarantine::list_runs` / `restore` |
+| 创建备份 | `backup::create` |
+| 校验备份 | `backup::verify` |
+
+执行清理和还原都要求在界面上勾选确认，按钮才会解锁——不是弹一个"确定吗"就完事，
+而是把「要动多少项、多少体积」写在勾选框旁边。
+
 ## 工程结构
 
 ```
@@ -135,6 +163,8 @@ crates/
     backup.rs            资产备份：zip + manifest.sha256 + 校验 + 还原
     report.rs            终端 / Markdown / JSON 报表
   curator-cli/           命令 `curator`：scan / clean / restore / bin / rules
+src-tauri/               桌面壳：Tauri 2，命令转发 + 窗口
+src/                     Vue3 前端（四个页面 + api.ts）
 rules/                   规则库（YAML，运行时可改，无需重新编译）
 ```
 
@@ -175,9 +205,10 @@ rules/                   规则库（YAML，运行时可改，无需重新编译
 |---|---|
 | M1 ✅ | 只读扫描 + 规则库 + 体积归类 + 报告导出 |
 | M2 ✅ | 清理计划、dry-run 清单、隔离区软删除与还原、进程占用检测 |
-| **M3 ✅** | 资产备份（zip + manifest + sha256）、完整性校验、跨机还原 |
-| M3.5 | 项目归档迁移（整目录打包 → 校验 → 异地解压） |
-| M4 | 桌面壳（Tauri 2 + Vue3）、安装包与签名、规则库云更新 |
+| M3 ✅ | 资产备份（zip + manifest + sha256）、完整性校验、跨机还原 |
+| **M4 ✅** | 桌面壳（Tauri 2 + Vue3），四页界面，与 CLI 共用核心 |
+| M4.5 | 安装包与代码签名（`bundle.active` 目前为 false）、应用图标 |
+| M5 | 项目归档迁移、规则库云更新、CI 与自动发布 |
 
 ## 开发
 

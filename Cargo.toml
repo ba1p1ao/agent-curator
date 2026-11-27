@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/curator-core", "crates/curator-cli"]
+members = ["crates/curator-core", "crates/curator-cli", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"

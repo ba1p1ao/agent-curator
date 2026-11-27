@@ -1,0 +1,18 @@
+[package]
+name = "curator-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "AgentCurator 桌面壳（Tauri 2 + Vue3）"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+curator-core = { path = "../crates/curator-core" }
+tauri = { version = "2", features = [] }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
