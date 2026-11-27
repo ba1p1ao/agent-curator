@@ -28,32 +28,34 @@ WizTree 之类的工具只懂"大"，CCleaner 只懂"缓存"，它们都不知�
 `~/.workbuddy/skills` 比 `~/.workbuddy/cache` 重要一万倍。
 **这个项目的护城河是规则库，不是删除逻辑。**
 
-## 快速开始
+## 三条命令上手
 
 ```bash
-cargo build --release
-
-# 只读体检
-./target/release/curator scan --md reports/scan.md --json reports/scan.json
-
-# 清理：默认只出计划，不动文件
-./target/release/curator clean
-
-# 确认无误后执行（移入隔离区，可还原）
-./target/release/curator clean --apply
-
-# 反悔
-./target/release/curator restore --last
-
-# 备份资产：打包 skills / memory / 配置
-./target/release/curator backup --label before-upgrade
-
-# 校验备份包（逐条比对 sha256）
-./target/release/curator backup-verify ~/curator-backups/agentcurator-xxx.zip
-
-# 换机还原到指定目录
-./target/release/curator backup-restore ~/curator-backups/agentcurator-xxx.zip --to D:/restore
+curator                 # 体检：多少能释放、多少不能碰
+curator clean           # 看清理计划（不会动文件）
+curator clean --apply   # 确认后执行，进隔离区
 ```
+
+反悔永远来得及：`curator restore --last`。
+
+其余命令按需取用：
+
+| 命令 | 用途 |
+|---|---|
+| `curator doctor` | 环境自检：规则来源、隔离区、备份、进程状态 |
+| `curator backup --label before-upgrade` | 备份 skills / memory / 配置 |
+| `curator backup-verify <zip>` | 逐条比对 sha256 |
+| `curator backup-restore <zip> --to D:/restore` | 换机还原 |
+| `curator bin` | 隔离区占用与批次 |
+| `curator rules validate` | 校验规则文件 |
+
+安装：
+
+```bash
+cargo install --path crates/curator-cli   # 装到 PATH，之后直接敲 curator
+```
+
+`curator.exe` 是自包含的——规则库编译在二进制里，单独拷到别的机器也能用。
 
 桌面端：
 
@@ -189,8 +191,17 @@ rules/                   规则库（YAML，运行时可改，无需重新编译
 2. 多条规则同时命中时，取最保守的那条（动作 → 风险 → 类别 → 模式长度）；
 3. 没有任何规则命中 → `unknown`，永远不进入清理计划。
 
-修改规则后直接重新运行 `curator scan` 即可生效，不需要重新编译。
-规则目录可用 `--rules <DIR>` 或环境变量 `CURATOR_RULES_DIR` 指定。
+修改规则后直接重新运行 `curator` 即可生效，不需要重新编译。
+
+**规则从哪来**（`curator doctor` 会显示当前用的是哪一种，按优先级）：
+
+1. `--rules <DIR>` 显式指定
+2. 环境变量 `CURATOR_RULES_DIR`
+3. 当前目录、或可执行文件旁边的 `rules/`
+4. 编译进二进制的**内置规则**
+
+最后一级兜底是为了分发：用户从 Releases 只下到一个 exe 时，不会因为缺 `rules/`
+而把所有文件判成"未识别"、整个产品形同虚设。
 
 ## 安全边界
 

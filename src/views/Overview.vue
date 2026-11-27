@@ -2,6 +2,9 @@
 import { onMounted, ref } from "vue";
 import { api, classLabel, errorText, humanBytes, thousands, type ScanResult } from "../api";
 
+defineOptions({ name: "Overview" });
+const emit = defineEmits<{ (e: "navigate", tab: string): void }>();
+
 const loading = ref(true);
 const err = ref("");
 const data = ref<ScanResult | null>(null);
@@ -62,6 +65,15 @@ onMounted(load);
         </div>
       </div>
 
+      <div class="row" style="margin-bottom: 14px">
+        <button class="btn primary" @click="emit('navigate', 'clean')">
+          查看清理计划
+        </button>
+        <button class="btn" @click="emit('navigate', 'backup')">备份资产</button>
+        <button class="btn" @click="emit('navigate', 'vault')">隔离区</button>
+        <span class="faint">清理和备份都不会直接删除东西</span>
+      </div>
+
       <div class="card">
         <h3 class="card-title">按数据性质分类</h3>
         <table class="table">
@@ -113,7 +125,8 @@ onMounted(load);
       <div class="row">
         <button class="btn" :disabled="loading" @click="load">重新扫描</button>
         <span class="faint">
-          规则 {{ data.ruleCount }} 条 · 耗时 {{ data.elapsedMs }} ms · {{ data.generatedAt }}
+          规则 {{ data.ruleCount }} 条（{{ data.ruleSource }}）· 耗时 {{ data.elapsedMs }} ms ·
+          {{ data.generatedAt }}
         </span>
       </div>
     </template>

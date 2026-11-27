@@ -5,6 +5,7 @@
 //! 2. 多条命中时取最保守结论（priority → risk → class → 模式长度）；
 //! 3. 无任何命中 → `unknown`，永不进入清理计划。
 
+pub mod builtin;
 pub mod schema;
 
 use std::collections::HashSet;
@@ -19,6 +20,26 @@ use crate::util::{expand_tilde, home_dir, normalize_path};
 use schema::{AgentRulesFile, RuleDef};
 
 pub const SCHEMA_VERSION: u32 = 1;
+
+/// 规则从哪来的。`doctor` / `scan` 都会展示，方便排查"规则没生效"。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuleSource {
+    External(PathBuf),
+    Builtin,
+}
+
+impl RuleSource {
+    pub fn label(&self) -> String {
+        match self {
+            RuleSource::External(path) => format!("外部目录 {}", path.display()),
+            RuleSource::Builtin => "内置（编译进二进制）".to_string(),
+        }
+    }
+
+    pub fn is_builtin(&self) -> bool {
+        matches!(self, RuleSource::Builtin)
+    }
+}
 
 /// 编译后的一条规则。
 #[derive(Debug, Clone)]
@@ -90,6 +111,27 @@ impl RuleLibrary {
             docs.push((file.clone(), doc));
         }
         Self::from_docs(docs)
+    }
+
+    /// 用编译期内置规则构建。用户只拿到一个 exe 时靠它兜底。
+    pub fn load_builtin() -> Result<Self> {
+        let mut docs = Vec::with_capacity(builtin::SOURCES.len());
+        for &(name, text) in builtin::SOURCES {
+            let doc: AgentRulesFile = serde_yaml::from_str(text)
+                .with_context(|| format!("内置规则 {} 解析失败", name))?;
+            docs.push((PathBuf::from(format!("<builtin>/{}", name)), doc));
+        }
+        Self::from_docs(docs)
+    }
+
+    /// 按顺序尝试候选目录，全部不存在时回落到内置规则。
+    pub fn load_discovered(candidates: &[PathBuf]) -> Result<(Self, RuleSource)> {
+        for dir in candidates {
+            if dir.is_dir() {
+                return Ok((Self::load_dir(dir)?, RuleSource::External(dir.clone())));
+            }
+        }
+        Ok((Self::load_builtin()?, RuleSource::Builtin))
     }
 
     pub(crate) fn from_docs(docs: Vec<(PathBuf, AgentRulesFile)>) -> Result<Self> {

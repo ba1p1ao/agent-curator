@@ -14,7 +14,7 @@ use curator_core::model::DataClass;
 use curator_core::plan::{self, Plan, PlanOptions};
 use curator_core::procs;
 use curator_core::quarantine::{Quarantine, RunStatus, DEFAULT_BIN_DIR};
-use curator_core::rules::RuleLibrary;
+use curator_core::rules::{RuleLibrary, RuleSource};
 use curator_core::scanner::{self, ScanOptions, ScanTarget};
 use curator_core::util::home_dir;
 use serde::{Deserialize, Serialize};
@@ -52,6 +52,7 @@ struct ScanDto {
     classes: Vec<BucketDto>,
     roots: Vec<RootDto>,
     rule_count: usize,
+    rule_source: String,
     running: Vec<String>,
     generated_at: String,
 }
@@ -147,11 +148,13 @@ struct RulesInfoDto {
 
 // ---------------------------------------------------------------- 路径
 
-fn rules_dir() -> Result<PathBuf> {
-    if let Some(env) = std::env::var_os("CURATOR_RULES_DIR") {
-        return Ok(PathBuf::from(env));
-    }
+/// 外部 rules/ 优先，找不到就用编译进二进制的内置规则。
+/// 这样用户把 exe 挪到任何位置都不会因为缺规则目录而瘫掉。
+fn rules_candidates() -> Vec<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(env) = std::env::var_os("CURATOR_RULES_DIR") {
+        candidates.push(PathBuf::from(env));
+    }
     if let Ok(cwd) = std::env::current_dir() {
         candidates.push(cwd.join("rules"));
         candidates.push(cwd.join("../rules"));
@@ -163,12 +166,7 @@ fn rules_dir() -> Result<PathBuf> {
             candidates.push(dir.join("../../../rules"));
         }
     }
-    for dir in candidates {
-        if dir.is_dir() {
-            return Ok(dir);
-        }
-    }
-    bail!("找不到 rules 目录，请设置环境变量 CURATOR_RULES_DIR")
+    candidates
 }
 
 fn bin_dir() -> PathBuf {
@@ -204,9 +202,8 @@ fn status_key(status: RunStatus) -> &'static str {
     }
 }
 
-fn load_library() -> Result<RuleLibrary> {
-    let dir = rules_dir()?;
-    RuleLibrary::load_dir(&dir)
+fn load_library() -> Result<(RuleLibrary, RuleSource)> {
+    RuleLibrary::load_discovered(&rules_candidates())
 }
 
 fn collect_targets(lib: &RuleLibrary) -> Vec<ScanTarget> {
@@ -224,7 +221,7 @@ async fn scan_all() -> Result<ScanDto, String> {
 }
 
 fn do_scan() -> Result<ScanDto> {
-    let lib = load_library()?;
+    let (lib, source) = load_library()?;
     let targets = collect_targets(&lib);
     if targets.is_empty() {
         bail!("未发现任何 AI agent 数据目录");
@@ -288,6 +285,7 @@ fn do_scan() -> Result<ScanDto> {
         classes,
         roots,
         rule_count: lib.len(),
+        rule_source: source.label(),
         running,
         generated_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     })
@@ -304,7 +302,7 @@ async fn plan_clean(opts: CleanOptions) -> Result<Plan, String> {
 }
 
 fn do_plan(opts: &CleanOptions) -> Result<Plan> {
-    let lib = load_library()?;
+    let (lib, _source) = load_library()?;
     let targets = collect_targets(&lib);
     if targets.is_empty() {
         bail!("未发现任何 AI agent 数据目录");
@@ -429,7 +427,7 @@ async fn create_backup(label: Option<String>, agents: Vec<String>) -> Result<Bac
 }
 
 fn do_backup(label: Option<String>, agents: Vec<String>) -> Result<BackupDto> {
-    let lib = load_library()?;
+    let (lib, _source) = load_library()?;
     let targets = collect_targets(&lib);
     if targets.is_empty() {
         bail!("未发现任何 AI agent 数据目录");
@@ -520,7 +518,7 @@ async fn verify_backup(path: String) -> Result<VerifyDto, String> {
 #[tauri::command]
 async fn rules_info() -> Result<RulesInfoDto, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<RulesInfoDto> {
-        let lib = load_library().context("加载规则库失败")?;
+        let (lib, _source) = load_library().context("加载规则库失败")?;
         Ok(RulesInfoDto {
             count: lib.len(),
             agents: lib.agents.clone(),

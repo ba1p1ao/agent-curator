@@ -13,6 +13,8 @@ import {
   type Plan,
 } from "../api";
 
+const emit = defineEmits<{ (e: "navigate", tab: string): void }>();
+
 const includeReview = ref(false);
 const includeRunning = ref(false);
 const minSizeMb = ref(0);
@@ -202,9 +204,13 @@ async function applyPlan() {
           {{ result.failures.length }} 项失败
         </template>
       </div>
-      <p class="muted" style="margin: 10px 0 0">
-        去「隔离区」页面可以随时还原。
-      </p>
+      <div class="row" style="margin-top: 12px">
+        <button class="btn primary" @click="emit('navigate', 'vault')">
+          去隔离区看看
+        </button>
+        <button class="btn" @click="result = null">继续清理</button>
+        <span class="faint">还原不会覆盖已有文件</span>
+      </div>
     </div>
   </div>
 </template>

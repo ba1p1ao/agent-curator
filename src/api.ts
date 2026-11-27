@@ -25,6 +25,7 @@ export interface ScanResult {
   classes: Bucket[];
   roots: RootInfo[];
   ruleCount: number;
+  ruleSource: string;
   running: string[];
   generatedAt: string;
 }

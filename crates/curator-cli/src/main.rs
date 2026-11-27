@@ -12,13 +12,14 @@ use chrono::Local;
 use clap::{Args, Parser, Subcommand};
 use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
 use curator_core::backup;
+use curator_core::model::DataClass;
 use curator_core::plan::{self, PlanOptions};
 use curator_core::procs;
 use curator_core::quarantine::{Quarantine, DEFAULT_BIN_DIR};
 use curator_core::report::{self, ReportInput};
-use curator_core::rules::RuleLibrary;
+use curator_core::rules::{RuleLibrary, RuleSource};
 use curator_core::scanner::{self, ScanEvent, ScanOptions, ScanTarget};
-use curator_core::util::{expand_tilde, home_dir, human_bytes, thousands, truncate};
+use curator_core::util::{expand_tilde, home_dir, human_bytes, pct, thousands, truncate};
 
 const ENV_BIN_DIR: &str = "CURATOR_BIN_DIR";
 const ENV_RULES_DIR: &str = "CURATOR_RULES_DIR";
@@ -28,15 +29,27 @@ const ENV_BACKUP_DIR: &str = "CURATOR_BACKUP_DIR";
 #[command(
     name = "curator",
     version,
-    about = "AgentCurator — AI agent 文件体检、清理与备份"
+    about = "AgentCurator — AI agent 文件体检、清理与备份",
+    long_about = "给 AI agent 留下的文件做清产核资：分清能删的和不能删的，\n\
+清理一律先进隔离区，备份逐条校验 sha256。\n\n\
+不带子命令时直接体检并给出建议。",
+    after_help = "常用：\n\
+  curator                 体检 + 建议（只读）\n\
+  curator clean           清理计划（默认不动文件）\n\
+  curator clean --apply   执行，移入隔离区\n\
+  curator restore --last  撤销上一次清理\n\
+  curator backup          备份资产\n\
+  curator doctor          环境自检"
 )]
 struct Cli {
     #[command(subcommand)]
-    cmd: Cmd,
+    cmd: Option<Cmd>,
 }
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// 环境自检：规则来源、隔离区、备份、进程状态
+    Doctor,
     /// 扫描已安装的 AI agent 数据目录并输出体检报告（只读）
     Scan(ScanArgs),
     /// 生成清理计划并移入隔离区（默认 dry-run）
@@ -201,7 +214,11 @@ struct RulesLoc {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    match cli.cmd {
+    let Some(cmd) = cli.cmd else {
+        return run_welcome();
+    };
+    match cmd {
+        Cmd::Doctor => run_doctor(),
         Cmd::Scan(args) => run_scan(args),
         Cmd::Clean(args) => run_clean(args),
         Cmd::Restore(args) => run_restore(args),
@@ -216,18 +233,165 @@ fn main() -> Result<()> {
     }
 }
 
+// ---------------------------------------------------------------- welcome
+
+/// 不带子命令时的默认行为：体检 + 下一步建议。
+///
+/// 这是产品的"第一屏"。用户 `curator` 一敲就能知道：
+/// 有多少可释放的空间、有没有风险、接下来该敲什么。
+fn run_welcome() -> Result<()> {
+    let (lib, source) = load_rules(None)?;
+
+    println!("AgentCurator {}  ·  只读体检", env!("CARGO_PKG_VERSION"));
+    if source.is_builtin() {
+        println!("规则来源：内置（当前目录没有 rules/）");
+    }
+    println!();
+
+    let targets = build_targets(&[], &lib);
+    if targets.is_empty() {
+        println!("没有检测到任何 AI agent 数据目录。");
+        println!();
+        println!("如果你确实装了 Claude Code / Codex / WorkBuddy，");
+        println!("请确认它们至少完整运行过一次，或者手动指定目录：");
+        println!("  curator scan --root \"C:/Users/you/.claude\"");
+        return Ok(());
+    }
+
+    let outcome = scanner::scan_with(&targets, &lib, print_scan_event);
+    let agg = &outcome.agg;
+
+    println!(
+        "\n{} 个文件 / {}，耗时 {} ms\n",
+        thousands(outcome.total_files),
+        human_bytes(outcome.total_bytes),
+        outcome.elapsed_ms
+    );
+
+    let mut t = new_table(vec!["类别", "体积", "占比", "结论"]);
+    for (class, bucket) in &agg.by_class {
+        let verdict = match class {
+            DataClass::Asset => "保留，删了不可恢复",
+            DataClass::Workspace => "需逐项确认",
+            DataClass::Product => "可由源码重建",
+            DataClass::Ephemeral => "可安全释放",
+            DataClass::Unknown => "保留，无规则命中",
+        };
+        t.add_row(vec![
+            class.label().to_string(),
+            human_bytes(bucket.bytes),
+            pct(bucket.bytes, agg.total_bytes),
+            verdict.to_string(),
+        ]);
+    }
+    println!("{t}");
+
+    println!();
+    if agg.safe_bytes > 0 {
+        println!(
+            "可安全释放 {}（低风险、可重建）。",
+            human_bytes(agg.safe_bytes)
+        );
+    }
+    if let Some(bucket) = agg.by_class.get(&DataClass::Unknown) {
+        if bucket.bytes > 0 {
+            println!(
+                "另有 {} 个文件没有规则命中（{}），默认保留。",
+                thousands(bucket.files),
+                human_bytes(bucket.bytes)
+            );
+        }
+    }
+
+    println!("\n下一步");
+    println!("  curator clean      查看清理计划（不会动任何文件）");
+    println!("  curator backup     备份用户资产（skills / memory / 配置）");
+    println!("  curator doctor     查看环境、规则与隔离区状态");
+    Ok(())
+}
+
+// ---------------------------------------------------------------- doctor
+
+/// 环境自检。出问题时第一个该跑的命令。
+fn run_doctor() -> Result<()> {
+    let (lib, source) = load_rules(None)?;
+
+    println!("环境");
+    println!("  版本     {}", env!("CARGO_PKG_VERSION"));
+    println!("  规则     {} 条 / {} 个文件", lib.len(), lib.sources.len());
+    println!("  来源     {}", source.label());
+    if source.is_builtin() {
+        println!("           想热改规则，就在当前目录建一个 rules/ 目录");
+    }
+
+    let targets = scanner::discover(&lib);
+    println!(
+        "  扫描根   {} 个定义，本机命中 {} 个",
+        lib.roots.len(),
+        targets.len()
+    );
+
+    let bin = resolve_bin_dir(None);
+    let quarantine = Quarantine::new(bin.clone());
+    let (runs, bytes) = quarantine.usage();
+    let writable = fs::create_dir_all(&bin).is_ok();
+    println!(
+        "  隔离区   {} （{} 批 / {}）{}",
+        bin.display(),
+        runs,
+        human_bytes(bytes),
+        if writable { "" } else { "  [不可写]" }
+    );
+
+    let backups = resolve_backup_dir(None);
+    let packages = fs::read_dir(&backups)
+        .map(|it| {
+            it.flatten()
+                .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("zip"))
+                .count()
+        })
+        .unwrap_or(0);
+    println!("  备份     {} （{} 个包）", backups.display(), packages);
+
+    println!("\nAgent");
+    for root in &lib.roots {
+        let installed = root.path.exists();
+        println!(
+            "  {:<14} {:<8} {}",
+            root.agent,
+            if installed { "已安装" } else { "未安装" },
+            if installed {
+                root.path.display().to_string()
+            } else {
+                String::new()
+            }
+        );
+    }
+
+    println!("\n进程");
+    match procs::detect_running(&lib) {
+        Ok(list) if list.is_empty() => println!("  没有运行中的 agent，可以安全清理"),
+        Ok(list) => println!("  正在运行：{}（清理时这些会被跳过）", list.join("、")),
+        Err(e) => println!("  检测失败：{}（清理会中止，除非加 --include-running）", e),
+    }
+
+    println!("\n提示");
+    println!("  curator                 直接体检并给建议");
+    println!("  curator clean           查看清理计划");
+    println!("  curator rules validate  校验规则文件");
+    Ok(())
+}
+
 // ---------------------------------------------------------------- scan
 
 fn run_scan(args: ScanArgs) -> Result<()> {
-    let rules_dir = resolve_rules_dir(args.rules.clone())?;
-    let lib = RuleLibrary::load_dir(&rules_dir)
-        .with_context(|| format!("加载规则库失败: {}", rules_dir.display()))?;
+    let (lib, source) = load_rules(args.rules.clone())?;
 
     eprintln!(
-        "规则库: {} 条规则 / {} 个文件  ({})",
+        "规则库: {} 条规则 / {} 个文件  （{}）",
         lib.len(),
         lib.sources.len(),
-        rules_dir.display()
+        source.label()
     );
     for warning in &lib.warnings {
         eprintln!("[警告] {}", warning);
@@ -281,14 +445,22 @@ fn run_scan(args: ScanArgs) -> Result<()> {
         }
     }
 
+    println!(
+        "
+下一步"
+    );
+    println!("  curator clean     查看清理计划（不会动任何文件）");
+    println!("  curator backup    备份用户资产");
     Ok(())
 }
 
 // ---------------------------------------------------------------- clean
 
 fn run_clean(args: CleanArgs) -> Result<()> {
-    let rules_dir = resolve_rules_dir(args.rules.clone())?;
-    let lib = RuleLibrary::load_dir(&rules_dir)?;
+    let (lib, source) = load_rules(args.rules.clone())?;
+    if source.is_builtin() {
+        eprintln!("[提示] 未找到外部 rules/，使用内置规则");
+    }
 
     let targets = build_targets(&args.roots, &lib);
     if targets.is_empty() {
@@ -484,8 +656,7 @@ fn print_runs(quarantine: &Quarantine) -> Result<()> {
 // ---------------------------------------------------------------- backup
 
 fn run_backup(args: BackupArgs) -> Result<()> {
-    let rules_dir = resolve_rules_dir(args.rules.clone())?;
-    let lib = RuleLibrary::load_dir(&rules_dir)?;
+    let (lib, _source) = load_rules(args.rules.clone())?;
 
     let targets = build_targets(&args.roots, &lib);
     if targets.is_empty() {
@@ -630,11 +801,10 @@ fn resolve_backup_dir(arg: Option<PathBuf>) -> PathBuf {
 // ---------------------------------------------------------------- rules
 
 fn run_validate(loc: RulesLoc) -> Result<()> {
-    let dir = resolve_rules_dir(loc.rules)?;
-    let lib = RuleLibrary::load_dir(&dir)?;
+    let (lib, source) = load_rules(loc.rules)?;
 
     println!("规则库校验通过");
-    println!("  目录    : {}", dir.display());
+    println!("  来源    : {}", source.label());
     println!("  文件    : {} 个", lib.sources.len());
     println!(
         "  Agent   : {}",
@@ -663,8 +833,7 @@ fn run_validate(loc: RulesLoc) -> Result<()> {
 }
 
 fn run_list(loc: RulesLoc) -> Result<()> {
-    let dir = resolve_rules_dir(loc.rules)?;
-    let lib = RuleLibrary::load_dir(&dir)?;
+    let (lib, _source) = load_rules(loc.rules)?;
 
     let mut table = new_table(vec!["规则 ID", "类别", "风险", "处置", "匹配模式"]);
     for entry in lib.entries() {
@@ -781,39 +950,31 @@ fn resolve_bin_dir(arg: Option<PathBuf>) -> PathBuf {
     home_dir().join(DEFAULT_BIN_DIR)
 }
 
-/// 依次尝试：命令行参数 → 环境变量 → 当前目录 → 可执行文件向上若干层。
-fn resolve_rules_dir(arg: Option<PathBuf>) -> Result<PathBuf> {
+/// 规则加载：显式目录 → 环境变量 → 当前目录 → 可执行文件旁 → 内置。
+///
+/// 最后一级兜底是内置规则，所以用户只拿到一个 exe 也能正常跑。
+fn load_rules(arg: Option<PathBuf>) -> Result<(RuleLibrary, RuleSource)> {
     if let Some(path) = arg {
-        return Ok(path);
+        if !path.is_dir() {
+            bail!("规则目录不存在: {}", path.display());
+        }
+        return Ok((RuleLibrary::load_dir(&path)?, RuleSource::External(path)));
     }
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(env) = std::env::var_os(ENV_RULES_DIR) {
-        return Ok(PathBuf::from(env));
+        candidates.push(PathBuf::from(env));
     }
-
-    let cwd = std::env::current_dir().context("无法获取当前工作目录")?;
-    let local = cwd.join("rules");
-    if local.is_dir() {
-        return Ok(local);
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("rules"));
+        candidates.push(cwd.join("../rules"));
     }
-
     if let Ok(exe) = std::env::current_exe() {
-        let mut cursor = exe.parent().map(|p| p.to_path_buf());
-        let mut depth = 0;
-        while let Some(dir) = cursor {
-            let candidate = dir.join("rules");
-            if candidate.is_dir() {
-                return Ok(candidate);
-            }
-            if depth >= 4 {
-                break;
-            }
-            cursor = dir.parent().map(|p| p.to_path_buf());
-            depth += 1;
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("rules"));
+            candidates.push(dir.join("../rules"));
         }
     }
 
-    bail!(
-        "找不到规则目录，请用 --rules <DIR> 指定，或设置环境变量 {}",
-        ENV_RULES_DIR
-    )
+    RuleLibrary::load_discovered(&candidates)
 }
