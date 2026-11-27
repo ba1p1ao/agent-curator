@@ -31,6 +31,34 @@ pub const SOURCES: &[(&str, &str)] = &[
         )),
     ),
     (
+        "gemini-cli.yaml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../rules/gemini-cli.yaml"
+        )),
+    ),
+    (
+        "kiro.yaml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../rules/kiro.yaml"
+        )),
+    ),
+    (
+        "opencode.yaml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../rules/opencode.yaml"
+        )),
+    ),
+    (
+        "continue.yaml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../rules/continue.yaml"
+        )),
+    ),
+    (
         "generic.yaml",
         include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -48,7 +76,18 @@ mod tests {
     fn builtin_rules_compile_and_cover_known_agents() {
         let lib = RuleLibrary::load_builtin().expect("内置规则必须可用");
         assert!(lib.len() > 50, "内置规则数量异常: {}", lib.len());
-        for agent in ["claude-code", "codex", "workbuddy"] {
+        // 每新增一份 rules/*.yaml 都必须登记到 SOURCES，否则发行版里会缺规则。
+        // 这条断言就是防止"加了文件忘了注册"。
+        assert_eq!(SOURCES.len(), 8, "SOURCES 与 rules/ 目录下的文件数不一致");
+        for agent in [
+            "claude-code",
+            "codex",
+            "workbuddy",
+            "gemini-cli",
+            "kiro",
+            "opencode",
+            "continue",
+        ] {
             assert!(
                 lib.agents.iter().any(|(id, _)| id == agent),
                 "内置规则缺少 agent: {}",
