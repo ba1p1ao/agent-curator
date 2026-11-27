@@ -1,0 +1,60 @@
+# Continue 插件数据目录规则
+#
+# 本机只有 1.2 MB，写规则主要是为了让分类准确：
+# config 是用户配置必须保护，index 是可重建的索引。
+
+schema_version: 1
+agent: continue
+display_name: Continue
+processes: []
+
+roots:
+  - id: home
+    path: "~/.continue"
+    probe: ["config.yaml", "config.ts", "package.json"]
+    note: Continue 插件数据目录
+
+rules:
+  # ---------- 用户资产 ----------
+  - id: continue.asset.config
+    path: "~/.continue/config.*"
+    class: asset
+    risk: critical
+    action: protect
+    note: 模型与规则配置，删了要重新手配
+
+  - id: continue.asset.meta
+    path: "~/.continue/*.json"
+    class: asset
+    risk: critical
+    action: protect
+    note: package.json / tsconfig.json 等运行时依赖
+
+  - id: continue.asset.types
+    path: "~/.continue/types/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  # ---------- 可重建 ----------
+  - id: continue.ephemeral.index
+    path: "~/.continue/index/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 代码库索引，下次打开会重建
+
+  - id: continue.ephemeral.devdata
+    path: "~/.continue/dev_data/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 调试用数据
+
+  # ---------- 需确认 ----------
+  - id: continue.review.sessions
+    path: "~/.continue/sessions/**"
+    class: workspace
+    risk: medium
+    action: review
+    note: 会话记录

@@ -1,0 +1,23 @@
+# Gemini CLI 配置目录规则
+#
+# 本机只有 2 KB，全是配置。写这条规则不是为了清理，
+# 而是让报告里不再把这些文件算成「未识别」—— 语义准确才有意义。
+
+schema_version: 1
+agent: gemini-cli
+display_name: Gemini CLI
+processes: ["gemini", "gemini.exe"]
+
+roots:
+  - id: home
+    path: "~/.gemini"
+    probe: ["settings.json"]
+    note: Gemini CLI 配置目录
+
+rules:
+  - id: gemini.asset.all
+    path: "~/.gemini/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 目前只有 settings.json 与 MCP 配置；将来若出现 cache/logs 需拆细规则

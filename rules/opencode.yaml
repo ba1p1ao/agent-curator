@@ -1,0 +1,71 @@
+# OpenCode 数据目录规则
+#
+# 这个目录是四个未覆盖 agent 里唯一体积可观的（本机 765 MB），
+# 其中 725 MB 是会话数据库，属于用户数据而非垃圾 —— 绝不能默认清理。
+
+schema_version: 1
+agent: opencode
+display_name: OpenCode
+processes: ["opencode", "opencode.exe"]
+
+roots:
+  - id: data
+    path: "~/.local/share/opencode"
+    probe: ["opencode.db"]
+    note: OpenCode 数据目录（Windows 上走 XDG 风格路径）
+
+rules:
+  # ---------- 用户数据：删了不可恢复 ----------
+  - id: opencode.data.session-db
+    path: "~/.local/share/opencode/opencode.db"
+    class: workspace
+    risk: high
+    action: review
+    note: 会话与消息的 SQLite 主库，删了历史对话全部丢失
+
+  # ---------- 运行期伴生文件：交给 SQLite 自己管 ----------
+  - id: opencode.asset.db-wal
+    path: "~/.local/share/opencode/opencode.db-*"
+    class: asset
+    risk: critical
+    action: protect
+    note: >-
+      WAL/SHM 里可能还有已提交但未 checkpoint 的事务。
+      「进程没在运行」不等于「WAL 是空的」——正常退出时 SQLite 会自己 checkpoint 并删除，
+      轮不到我们动手；残留的 WAL 反而更不该删，那里面是还没并进主库的数据。
+
+  # ---------- 可安全释放 ----------
+  - id: opencode.ephemeral.logs
+    path: "~/.local/share/opencode/log/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: opencode.ephemeral.tool-output
+    path: "~/.local/share/opencode/tool-output/**"
+    class: ephemeral
+    risk: medium
+    action: clean
+
+  # ---------- 需要人判断 ----------
+  - id: opencode.review.snapshot
+    path: "~/.local/share/opencode/snapshot/**"
+    class: product
+    risk: high
+    action: review
+    note: 编辑前的代码快照，用于回滚；删了就无法撤销上一次改动
+
+  - id: opencode.review.shell
+    path: "~/.local/share/opencode/shell/**"
+    class: ephemeral
+    risk: medium
+    action: review
+    note: shell 会话记录，删了只丢历史
+
+  # ---------- 资产：硬保护 ----------
+  - id: opencode.asset.storage
+    path: "~/.local/share/opencode/storage/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: OpenCode 自身状态，体积很小，不要动

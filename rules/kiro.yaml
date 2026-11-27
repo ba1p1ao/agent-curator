@@ -1,0 +1,23 @@
+# Kiro 配置目录规则
+#
+# 本机只有 1 KB（settings/mcp.json）。同 Gemini CLI：写规则是为了分类准确，
+# 不是为了清理。
+
+schema_version: 1
+agent: kiro
+display_name: Kiro
+processes: ["kiro", "kiro.exe"]
+
+roots:
+  - id: home
+    path: "~/.kiro"
+    probe: ["settings/mcp.json"]
+    note: Kiro 配置目录
+
+rules:
+  - id: kiro.asset.all
+    path: "~/.kiro/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 目前只有 MCP 配置；将来若出现工作区缓存需拆细规则
