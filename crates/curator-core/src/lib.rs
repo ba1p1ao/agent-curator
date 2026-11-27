@@ -6,6 +6,9 @@
 pub mod aggregate;
 pub mod classifier;
 pub mod model;
+pub mod plan;
+pub mod procs;
+pub mod quarantine;
 pub mod report;
 pub mod rules;
 pub mod scanner;

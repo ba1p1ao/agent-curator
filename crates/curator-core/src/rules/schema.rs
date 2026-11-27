@@ -15,6 +15,9 @@ pub struct AgentRulesFile {
     pub agent: String,
     /// 展示名，如 `Claude Code`
     pub display_name: String,
+    /// 该 agent 的运行进程名（小写、不含路径）。命中时其目录一律跳过清理。
+    #[serde(default)]
+    pub processes: Vec<String>,
     #[serde(default)]
     pub roots: Vec<RootDef>,
     #[serde(default)]

@@ -10,6 +10,8 @@
 schema_version: 1
 agent: claude-code
 display_name: Claude Code
+# 命中这些进程时，本 agent 的目录一律跳过清理
+processes: ["claude", "claude.exe"]
 
 roots:
   - id: home

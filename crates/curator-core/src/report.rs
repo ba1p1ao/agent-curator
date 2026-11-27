@@ -10,6 +10,8 @@ use serde_json::json;
 
 use crate::aggregate::Aggregates;
 use crate::model::DataClass;
+use crate::plan::Plan;
+use crate::quarantine::{ApplyReport, RestoreReport};
 use crate::scanner::RootStat;
 use crate::util::{human_bytes, pct, thousands, truncate};
 
@@ -404,4 +406,160 @@ fn ratio(part: u64, total: u64) -> f64 {
     } else {
         part as f64 / total as f64
     }
+}
+
+/// 清理计划预览。执行前后共用，区别只在结尾的下一步提示。
+pub fn render_plan(plan: &Plan) -> String {
+    let mut out = String::new();
+
+    out.push_str("清理计划（dry-run，尚未移动任何文件）\n");
+    out.push_str(&format!("生成时间 {}\n", plan.generated_at));
+    if !plan.running_agents.is_empty() {
+        out.push_str(&format!(
+            "检测到正在运行：{}（相关条目已跳过）\n",
+            plan.running_agents.join(", ")
+        ));
+    }
+    out.push_str(&format!(
+        "\n将移动 {} 项，合计 {}\n",
+        thousands(plan.items.len() as u64),
+        human_bytes(plan.total_bytes())
+    ));
+    if !plan.skipped.is_empty() {
+        out.push_str(&format!(
+            "另有 {} 项被跳过 / {}\n",
+            thousands(plan.skipped.len() as u64),
+            human_bytes(plan.skipped_bytes())
+        ));
+    }
+    out.push('\n');
+
+    if plan.is_empty() {
+        out.push_str("没有可清理的条目。\n");
+        return out;
+    }
+
+    // 按规则分布
+    let mut rules: Vec<_> = plan.by_rule().into_iter().collect();
+    rules.sort_by_key(|(_, (_, bytes))| std::cmp::Reverse(*bytes));
+    let mut t = new_table(vec!["规则 ID", "文件数", "体积"]);
+    for (rule, (files, bytes)) in rules.iter().take(12) {
+        t.add_row(vec![
+            truncate(rule, 36),
+            thousands(*files),
+            human_bytes(*bytes),
+        ]);
+    }
+    out.push_str("按规则分布\n");
+    out.push_str(&t.to_string());
+    out.push_str("\n\n");
+
+    // 明细
+    let mut t = new_table(vec!["#", "路径", "体积", "类别", "风险"]);
+    for item in plan.items.iter().take(15) {
+        t.add_row(vec![
+            item.index.to_string(),
+            truncate(&item.path.to_string_lossy().replace('\\', "/"), 52),
+            human_bytes(item.bytes),
+            item.class.label().to_string(),
+            item.risk.label().to_string(),
+        ]);
+    }
+    out.push_str("明细（按体积取前 15 项）\n");
+    out.push_str(&t.to_string());
+    if plan.items.len() > 15 {
+        out.push_str(&format!("\n（共 {} 项，其余省略）", plan.items.len()));
+    }
+    out.push_str("\n\n");
+
+    // 跳过原因
+    if !plan.skipped.is_empty() {
+        let mut reasons: Vec<_> = plan.skip_reasons().into_iter().collect();
+        reasons.sort_by_key(|(_, (_, bytes))| std::cmp::Reverse(*bytes));
+        let mut t = new_table(vec!["跳过原因", "文件数", "体积"]);
+        for (reason, (files, bytes)) in reasons {
+            t.add_row(vec![
+                truncate(&reason, 40),
+                thousands(files),
+                human_bytes(bytes),
+            ]);
+        }
+        out.push_str("跳过原因\n");
+        out.push_str(&t.to_string());
+        out.push_str("\n\n");
+    }
+
+    out.push_str("下一步\n");
+    out.push_str("  curator clean --apply        把以上条目移入隔离区（可还原）\n");
+    out.push_str("  curator clean --apply --yes  跳过交互确认\n");
+    out.push_str("  需连带处理\"需人工确认\"项时追加 --include-review\n");
+    out
+}
+
+/// 执行结果。
+pub fn render_apply(report: &ApplyReport) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "已移入隔离区：{} 项 / {}\n",
+        thousands(report.moved as u64),
+        human_bytes(report.bytes)
+    ));
+    out.push_str(&format!("批次号 {}\n", report.run_id));
+    out.push_str(&format!("位置   {}\n", report.run_dir.display()));
+
+    if !report.failures.is_empty() {
+        out.push_str(&format!("\n{} 项失败（源文件未改动）：\n", report.failures.len()));
+        for (path, err) in report.failures.iter().take(10) {
+            out.push_str(&format!(
+                "  - {} : {}\n",
+                truncate(&path.to_string_lossy().replace('\\', "/"), 56),
+                truncate(err, 40)
+            ));
+        }
+        if report.failures.len() > 10 {
+            out.push_str(&format!("  ... 其余 {} 项省略\n", report.failures.len() - 10));
+        }
+    }
+
+    out.push_str(&format!(
+        "\n还原：curator restore {}\n",
+        report.run_id
+    ));
+    out
+}
+
+/// 还原结果。
+pub fn render_restore(report: &RestoreReport) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "已还原：{} 项 / {}\n",
+        thousands(report.restored as u64),
+        human_bytes(report.restored_bytes)
+    ));
+
+    if !report.conflicts.is_empty() {
+        out.push_str(&format!("\n{} 项冲突（未覆盖，文件仍在隔离区）：\n", report.conflicts.len()));
+        for (path, reason) in report.conflicts.iter().take(10) {
+            out.push_str(&format!(
+                "  - {} : {}\n",
+                truncate(&path.to_string_lossy().replace('\\', "/"), 56),
+                reason
+            ));
+        }
+        if report.conflicts.len() > 10 {
+            out.push_str(&format!("  ... 其余 {} 项省略\n", report.conflicts.len() - 10));
+        }
+    }
+
+    if !report.failures.is_empty() {
+        out.push_str(&format!("\n{} 项失败：\n", report.failures.len()));
+        for (path, err) in report.failures.iter().take(10) {
+            out.push_str(&format!(
+                "  - {} : {}\n",
+                truncate(&path.to_string_lossy().replace('\\', "/"), 56),
+                truncate(err, 40)
+            ));
+        }
+    }
+    out
 }

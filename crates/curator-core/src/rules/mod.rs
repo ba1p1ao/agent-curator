@@ -50,6 +50,8 @@ pub struct RuleLibrary {
     pub sources: Vec<PathBuf>,
     /// (agent, display_name)
     pub agents: Vec<(String, String)>,
+    /// (agent, 进程名列表)
+    pub processes: Vec<(String, Vec<String>)>,
     pub roots: Vec<ResolvedRoot>,
     /// 非致命问题，例如未声明 class 的规则
     pub warnings: Vec<String>,
@@ -90,11 +92,12 @@ impl RuleLibrary {
         Self::from_docs(docs)
     }
 
-    fn from_docs(docs: Vec<(PathBuf, AgentRulesFile)>) -> Result<Self> {
+    pub(crate) fn from_docs(docs: Vec<(PathBuf, AgentRulesFile)>) -> Result<Self> {
         let mut builder = GlobSetBuilder::new();
         let mut entries: Vec<RuleEntry> = Vec::new();
         let mut sources: Vec<PathBuf> = Vec::new();
         let mut agents: Vec<(String, String)> = Vec::new();
+        let mut processes: Vec<(String, Vec<String>)> = Vec::new();
         let mut roots: Vec<ResolvedRoot> = Vec::new();
         let mut warnings: Vec<String> = Vec::new();
         let mut seen_ids: HashSet<String> = HashSet::new();
@@ -114,6 +117,13 @@ impl RuleLibrary {
                 bail!("{}: agent 字段不能为空", file.display());
             }
             agents.push((doc.agent.clone(), doc.display_name.clone()));
+            processes.push((
+                doc.agent.clone(),
+                doc.processes
+                    .iter()
+                    .map(|p| p.to_ascii_lowercase())
+                    .collect(),
+            ));
 
             for root in &doc.roots {
                 if root.path.trim().is_empty() {
@@ -179,6 +189,7 @@ impl RuleLibrary {
             entries,
             sources,
             agents,
+            processes,
             roots,
             warnings,
         })

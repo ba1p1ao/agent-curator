@@ -12,6 +12,7 @@ use jwalk::WalkDir;
 
 use crate::aggregate::Aggregates;
 use crate::classifier::{classify, now_secs};
+use crate::model::{DataClass, Node};
 use crate::rules::RuleLibrary;
 use crate::util::normalize_path;
 
@@ -41,6 +42,14 @@ pub struct ScanOutcome {
     pub elapsed_ms: u128,
     pub total_files: u64,
     pub total_bytes: u64,
+    /// 仅在 `ScanOptions::collect_candidates` 为真时填充
+    pub candidates: Vec<Node>,
+}
+
+/// 扫描行为开关。默认不保留节点，避免百万文件时内存爆炸。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ScanOptions {
+    pub collect_candidates: bool,
 }
 
 /// 扫描进度事件，供 CLI 输出到 stderr。
@@ -85,7 +94,20 @@ pub fn scan(targets: &[ScanTarget], lib: &RuleLibrary) -> ScanOutcome {
 }
 
 /// 带进度回调的扫描。
-pub fn scan_with<F>(targets: &[ScanTarget], lib: &RuleLibrary, mut on_event: F) -> ScanOutcome
+pub fn scan_with<F>(targets: &[ScanTarget], lib: &RuleLibrary, on_event: F) -> ScanOutcome
+where
+    F: FnMut(ScanEvent<'_>),
+{
+    scan_with_opts(targets, lib, &ScanOptions::default(), on_event)
+}
+
+/// 带进度回调与采集开关的扫描。
+pub fn scan_with_opts<F>(
+    targets: &[ScanTarget],
+    lib: &RuleLibrary,
+    opts: &ScanOptions,
+    mut on_event: F,
+) -> ScanOutcome
 where
     F: FnMut(ScanEvent<'_>),
 {
@@ -93,6 +115,7 @@ where
     let now = now_secs();
     let mut agg = Aggregates::default();
     let mut roots: Vec<RootStat> = Vec::with_capacity(targets.len());
+    let mut candidates: Vec<Node> = Vec::new();
     let total = targets.len();
 
     for (index, target) in targets.iter().enumerate() {
@@ -144,6 +167,15 @@ where
             let node = classify(&path, size, mtime, &target.agent, lib, now);
             agg.add(&node);
 
+            if opts.collect_candidates
+                && matches!(
+                    node.class,
+                    DataClass::Ephemeral | DataClass::Product | DataClass::Workspace
+                )
+            {
+                candidates.push(node);
+            }
+
             files += 1;
             bytes += size;
         }
@@ -172,5 +204,6 @@ where
         elapsed_ms: started.elapsed().as_millis(),
         total_files,
         total_bytes,
+        candidates,
     }
 }

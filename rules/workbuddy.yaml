@@ -7,6 +7,8 @@
 schema_version: 1
 agent: workbuddy
 display_name: WorkBuddy
+# 命中这些进程时，本 agent 的目录一律跳过清理
+processes: ["workbuddy", "workbuddy.exe"]
 
 roots:
   - id: home

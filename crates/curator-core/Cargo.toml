@@ -15,3 +15,5 @@ globset.workspace = true
 jwalk.workspace = true
 comfy-table.workspace = true
 dirs.workspace = true
+chrono.workspace = true
+sysinfo.workspace = true
