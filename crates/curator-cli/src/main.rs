@@ -325,8 +325,7 @@ fn run_clean(args: CleanArgs) -> Result<()> {
         collect_candidates: true,
         ..Default::default()
     };
-    let outcome =
-        scanner::scan_with_opts(&targets, &lib, &scan_opts, print_scan_event);
+    let outcome = scanner::scan_with_opts(&targets, &lib, &scan_opts, print_scan_event);
 
     let plan_options = PlanOptions {
         include_review: args.include_review,
@@ -518,11 +517,7 @@ fn run_backup(args: BackupArgs) -> Result<()> {
     }
 
     let out_dir = resolve_backup_dir(args.out.clone());
-    let root_strings: Vec<String> = outcome
-        .roots
-        .iter()
-        .map(|r| r.path.clone())
-        .collect();
+    let root_strings: Vec<String> = outcome.roots.iter().map(|r| r.path.clone()).collect();
 
     let report = backup::create(&nodes, &out_dir, args.label.as_deref(), &root_strings)?;
 
@@ -552,9 +547,7 @@ fn run_backup_verify(args: BackupVerifyArgs) -> Result<()> {
     println!("备份包   {}", args.zip.display());
     println!(
         "格式     v{} · {} · {}",
-        manifest.format_version,
-        manifest.tool,
-        manifest.created_at
+        manifest.format_version, manifest.tool, manifest.created_at
     );
     println!("条目     {} 项", thousands(manifest.entries.len() as u64));
 

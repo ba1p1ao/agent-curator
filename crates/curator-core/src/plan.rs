@@ -206,7 +206,13 @@ mod tests {
 
     #[test]
     fn review_items_included_when_opted_in() {
-        let nodes = vec![node("C:/b", 200, DataClass::Product, Action::Review, "demo")];
+        let nodes = vec![node(
+            "C:/b",
+            200,
+            DataClass::Product,
+            Action::Review,
+            "demo",
+        )];
         let opts = PlanOptions {
             include_review: true,
             ..Default::default()
@@ -216,7 +222,13 @@ mod tests {
 
     #[test]
     fn running_agent_is_skipped() {
-        let nodes = vec![node("C:/a", 100, DataClass::Ephemeral, Action::Clean, "demo")];
+        let nodes = vec![node(
+            "C:/a",
+            100,
+            DataClass::Ephemeral,
+            Action::Clean,
+            "demo",
+        )];
         let plan = build(&nodes, &["demo".to_string()], &PlanOptions::default());
         assert!(plan.items.is_empty());
         assert_eq!(plan.skipped.len(), 1);

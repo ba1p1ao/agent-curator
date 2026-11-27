@@ -271,10 +271,7 @@ pub fn restore(zip_path: &Path, to: Option<&Path>, overwrite: bool) -> Result<Re
                 if let Some(secs) = entry.mtime {
                     if let Ok(stamp) = u64::try_from(secs) {
                         let t = std::time::UNIX_EPOCH + std::time::Duration::from_secs(stamp);
-                        let _ = fs::set_times(
-                            &target,
-                            fs::FileTimes::new().set_modified(t),
-                        );
+                        let _ = fs::set_times(&target, fs::FileTimes::new().set_modified(t));
                     }
                 }
                 report.restored += 1;
@@ -293,8 +290,8 @@ pub fn read_manifest(zip_path: &Path) -> Result<BackupManifest> {
 }
 
 fn open_with_manifest(zip_path: &Path) -> Result<(BackupManifest, ZipArchive<File>)> {
-    let file = File::open(zip_path)
-        .with_context(|| format!("打不开备份包: {}", zip_path.display()))?;
+    let file =
+        File::open(zip_path).with_context(|| format!("打不开备份包: {}", zip_path.display()))?;
     let mut archive = ZipArchive::new(file).context("不是有效的 zip 文件")?;
 
     let mut raw = String::new();
@@ -333,7 +330,13 @@ fn original_relative(path: &Path) -> PathBuf {
 fn sanitize(label: &str) -> String {
     label
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 

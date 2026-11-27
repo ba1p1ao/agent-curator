@@ -1,5 +1,7 @@
 # AgentCurator · 司库
 
+[![CI](https://github.com/ba1p1ao/agent-curator/actions/workflows/ci.yml/badge.svg)](https://github.com/ba1p1ao/agent-curator/actions/workflows/ci.yml)
+
 > 给 AI agent 留下的文件做「清产核资」：分清哪些是要长期保管的资产、哪些是可以放心丢掉的痕迹。
 
 `curator` 的本义是**典藏管理者**——给藏品编目、分类，决定哪些入库、哪些出库。

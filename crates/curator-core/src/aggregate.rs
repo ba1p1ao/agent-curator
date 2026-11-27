@@ -80,7 +80,10 @@ impl Aggregates {
             .unwrap_or_else(|| "unmatched".to_string());
         let risk = node.risk.unwrap_or(Risk::High);
         let agg = self.by_rule.entry(key).or_insert_with(|| RuleAgg {
-            rule_id: node.rule_id.clone().unwrap_or_else(|| "unmatched".to_string()),
+            rule_id: node
+                .rule_id
+                .clone()
+                .unwrap_or_else(|| "unmatched".to_string()),
             agent: node.agent.clone(),
             class: node.class,
             risk,

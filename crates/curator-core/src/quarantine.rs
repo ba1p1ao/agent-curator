@@ -140,10 +140,7 @@ impl Quarantine {
         // 防御：隔离区不能落在待清理路径内部，否则会自我吞噬
         for item in &plan.items {
             if item.path.starts_with(&self.root) {
-                bail!(
-                    "待清理路径位于隔离区内部，已中止：{}",
-                    item.path.display()
-                );
+                bail!("待清理路径位于隔离区内部，已中止：{}", item.path.display());
             }
         }
 
@@ -312,9 +309,10 @@ impl Quarantine {
                 continue;
             }
             if item.original.exists() {
-                report
-                    .conflicts
-                    .push((item.original.clone(), "原路径已有同名文件，未覆盖".to_string()));
+                report.conflicts.push((
+                    item.original.clone(),
+                    "原路径已有同名文件，未覆盖".to_string(),
+                ));
                 continue;
             }
             if let Some(parent) = item.original.parent() {
@@ -446,13 +444,12 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     // 先写临时文件再改名：manifest 是还原的唯一依据，不能出现半截 JSON
     let tmp = path.with_extension("json.tmp");
     fs::write(ext(&tmp), text).with_context(|| format!("写入失败: {}", tmp.display()))?;
-    fs::rename(ext(&tmp), ext(path))
-        .with_context(|| format!("提交失败: {}", path.display()))
+    fs::rename(ext(&tmp), ext(path)).with_context(|| format!("提交失败: {}", path.display()))
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    let text = fs::read_to_string(ext(path))
-        .with_context(|| format!("读取失败: {}", path.display()))?;
+    let text =
+        fs::read_to_string(ext(path)).with_context(|| format!("读取失败: {}", path.display()))?;
     Ok(serde_json::from_str(&text)?)
 }
 

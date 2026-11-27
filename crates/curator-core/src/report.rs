@@ -159,10 +159,7 @@ pub fn render_terminal(input: &ReportInput) -> String {
     out.push_str("按规则体积 Top 12\n");
     out.push_str(&t.to_string());
     if rules.len() > 12 {
-        out.push_str(&format!(
-            "\n（共 {} 条规则命中，其余省略）",
-            rules.len()
-        ));
+        out.push_str(&format!("\n（共 {} 条规则命中，其余省略）", rules.len()));
     }
     out.push_str("\n\n");
 
@@ -508,7 +505,10 @@ pub fn render_apply(report: &ApplyReport) -> String {
     out.push_str(&format!("位置   {}\n", report.run_dir.display()));
 
     if !report.failures.is_empty() {
-        out.push_str(&format!("\n{} 项失败（源文件未改动）：\n", report.failures.len()));
+        out.push_str(&format!(
+            "\n{} 项失败（源文件未改动）：\n",
+            report.failures.len()
+        ));
         for (path, err) in report.failures.iter().take(10) {
             out.push_str(&format!(
                 "  - {} : {}\n",
@@ -517,14 +517,14 @@ pub fn render_apply(report: &ApplyReport) -> String {
             ));
         }
         if report.failures.len() > 10 {
-            out.push_str(&format!("  ... 其余 {} 项省略\n", report.failures.len() - 10));
+            out.push_str(&format!(
+                "  ... 其余 {} 项省略\n",
+                report.failures.len() - 10
+            ));
         }
     }
 
-    out.push_str(&format!(
-        "\n还原：curator restore {}\n",
-        report.run_id
-    ));
+    out.push_str(&format!("\n还原：curator restore {}\n", report.run_id));
     out
 }
 
@@ -538,7 +538,10 @@ pub fn render_restore(report: &RestoreReport) -> String {
     ));
 
     if !report.conflicts.is_empty() {
-        out.push_str(&format!("\n{} 项冲突（未覆盖，文件仍在隔离区）：\n", report.conflicts.len()));
+        out.push_str(&format!(
+            "\n{} 项冲突（未覆盖，文件仍在隔离区）：\n",
+            report.conflicts.len()
+        ));
         for (path, reason) in report.conflicts.iter().take(10) {
             out.push_str(&format!(
                 "  - {} : {}\n",
@@ -547,7 +550,10 @@ pub fn render_restore(report: &RestoreReport) -> String {
             ));
         }
         if report.conflicts.len() > 10 {
-            out.push_str(&format!("  ... 其余 {} 项省略\n", report.conflicts.len() - 10));
+            out.push_str(&format!(
+                "  ... 其余 {} 项省略\n",
+                report.conflicts.len() - 10
+            ));
         }
     }
 

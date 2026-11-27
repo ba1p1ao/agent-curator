@@ -130,6 +130,7 @@ pub struct Node {
 
 impl Node {
     pub fn is_protected(&self) -> bool {
-        matches!(self.action, Action::Protect) || matches!(self.class, DataClass::Asset | DataClass::Unknown)
+        matches!(self.action, Action::Protect)
+            || matches!(self.class, DataClass::Asset | DataClass::Unknown)
     }
 }
