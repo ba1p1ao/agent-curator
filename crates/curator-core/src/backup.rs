@@ -54,7 +54,53 @@ pub struct BackupReport {
     pub source_bytes: u64,
     pub zip_bytes: u64,
     pub zip_sha256: String,
+    /// 因属于可重建元数据而跳过的文件数与体积
+    pub excluded_files: usize,
+    pub excluded_bytes: u64,
     pub failures: Vec<(PathBuf, String)>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BackupOptions {
+    pub label: Option<String>,
+    /// 已知的 agent 根目录，用来把包内路径裁成相对形式
+    pub roots: Vec<String>,
+    /// 是否把 .git / node_modules / 日志这类可重建内容也打进包
+    pub include_noise: bool,
+}
+
+/// 判断某个文件是不是「可重建元数据」。
+///
+/// 默认排除的理由：`.git` 里的对象、`node_modules`、日志都能重新拉取或生成，
+/// 打进备份包只会让包变大、还原变慢，还容易让人误以为"这些也得留着"。
+pub fn is_noise(path: &Path) -> bool {
+    const NOISE_DIRS: &[&str] = &[
+        ".git",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        ".pnpm-store",
+    ];
+
+    for part in path.components() {
+        if let std::path::Component::Normal(seg) = part {
+            let seg = seg.to_string_lossy();
+            if NOISE_DIRS.iter().any(|d| seg.eq_ignore_ascii_case(d)) {
+                return true;
+            }
+        }
+    }
+
+    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+        if name == ".DS_Store" || name == "Thumbs.db" {
+            return true;
+        }
+    }
+
+    matches!(
+        path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()),
+        Some(ext) if ext == "log" || ext == "tmp" || ext == "pyc"
+    )
 }
 
 #[derive(Debug, Default)]
@@ -74,12 +120,7 @@ pub struct RestoreBackupReport {
 }
 
 /// 把资产类节点打包。只读源文件，不改动任何原件。
-pub fn create(
-    nodes: &[Node],
-    out_dir: &Path,
-    label: Option<&str>,
-    roots: &[String],
-) -> Result<BackupReport> {
+pub fn create(nodes: &[Node], out_dir: &Path, opts: &BackupOptions) -> Result<BackupReport> {
     let assets: Vec<&Node> = nodes
         .iter()
         .filter(|n| n.class == DataClass::Asset)
@@ -92,7 +133,7 @@ pub fn create(
         .with_context(|| format!("创建备份目录失败: {}", out_dir.display()))?;
 
     let stamp = Local::now().format("%Y%m%d-%H%M%S");
-    let name = match label {
+    let name = match opts.label.as_deref() {
         Some(l) if !l.is_empty() => format!("agentcurator-{}-{}.zip", sanitize(l), stamp),
         _ => format!("agentcurator-{}.zip", stamp),
     };
@@ -110,7 +151,12 @@ pub fn create(
     let mut entries: Vec<BackupEntry> = Vec::new();
 
     for node in assets {
-        let stored = stored_name(&node.path, roots);
+        if !opts.include_noise && is_noise(&node.path) {
+            report.excluded_files += 1;
+            report.excluded_bytes += node.size;
+            continue;
+        }
+        let stored = stored_name(&node.path, &opts.roots);
         let mut source = match File::open(&node.path) {
             Ok(f) => f,
             Err(e) => {
@@ -167,7 +213,7 @@ pub fn create(
         tool: format!("AgentCurator {}", env!("CARGO_PKG_VERSION")),
         created_at: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         host: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
-        roots: roots.to_vec(),
+        roots: opts.roots.clone(),
         entries,
     };
     writer.start_file(MANIFEST_NAME, options)?;
@@ -428,6 +474,14 @@ mod tests {
         dir
     }
 
+    fn opts(label: Option<&str>, roots: &[String]) -> BackupOptions {
+        BackupOptions {
+            label: label.map(|s| s.to_string()),
+            roots: roots.to_vec(),
+            include_noise: false,
+        }
+    }
+
     fn asset(path: &Path, size: u64) -> Node {
         Node {
             path: path.to_path_buf(),
@@ -451,7 +505,7 @@ mod tests {
         fs::write(&a, b"# skill body").unwrap();
 
         let out = work.join("out");
-        let report = create(&[asset(&a, 12)], &out, Some("test"), &[]).unwrap();
+        let report = create(&[asset(&a, 12)], &out, &opts(Some("test"), &[])).unwrap();
         assert_eq!(report.entries, 1);
         assert!(report.path.exists());
         assert_eq!(report.zip_sha256.len(), 64);
@@ -477,7 +531,7 @@ mod tests {
         fs::write(&a, b"v1").unwrap();
 
         let out = work.join("out");
-        let report = create(&[asset(&a, 2)], &out, None, &[]).unwrap();
+        let report = create(&[asset(&a, 2)], &out, &opts(None, &[])).unwrap();
         fs::write(&a, b"v2-different").unwrap();
 
         let r = restore(&report.path, None, false).unwrap();
@@ -496,7 +550,7 @@ mod tests {
         fs::write(&a, b"data").unwrap();
 
         let out = work.join("out");
-        let report = create(&[asset(&a, 4)], &out, None, &[]).unwrap();
+        let report = create(&[asset(&a, 4)], &out, &opts(None, &[])).unwrap();
 
         let target = work.join("restored");
         let r = restore(&report.path, Some(&target), false).unwrap();
@@ -518,7 +572,7 @@ mod tests {
 
         let out = work.join("out");
         let roots = vec![root.display().to_string()];
-        let report = create(&[asset(&file, 1)], &out, None, &roots).unwrap();
+        let report = create(&[asset(&file, 1)], &out, &opts(None, &roots)).unwrap();
 
         let manifest = read_manifest(&report.path).unwrap();
         assert_eq!(
@@ -533,6 +587,54 @@ mod tests {
     }
 
     #[test]
+    fn git_and_node_modules_are_excluded_by_default() {
+        let work = temp_dir("noise");
+        let root = work.join(".claude");
+        let git = root.join("plugins").join("demo").join(".git");
+        let nm = root.join("plugins").join("demo").join("node_modules");
+        fs::create_dir_all(&git).unwrap();
+        fs::create_dir_all(&nm).unwrap();
+
+        let keep = root.join("skills").join("a.md");
+        fs::create_dir_all(keep.parent().unwrap()).unwrap();
+        fs::write(&keep, b"keep").unwrap();
+
+        let obj = git.join("config");
+        fs::write(&obj, b"git").unwrap();
+        let dep = nm.join("index.js");
+        fs::write(&dep, b"js").unwrap();
+
+        let nodes = vec![asset(&keep, 4), asset(&obj, 3), asset(&dep, 2)];
+        let report = create(&nodes, &work.join("out"), &opts(None, &[])).unwrap();
+
+        assert_eq!(report.entries, 1, "只应保留 skills/a.md");
+        assert_eq!(report.excluded_files, 2);
+        assert_eq!(report.excluded_bytes, 5);
+
+        let manifest = read_manifest(&report.path).unwrap();
+        assert!(manifest.entries.iter().all(|e| !e.stored.contains(".git")));
+        assert!(manifest
+            .entries
+            .iter()
+            .all(|e| !e.stored.contains("node_modules")));
+    }
+
+    #[test]
+    fn noise_can_be_included_on_demand() {
+        let work = temp_dir("noise-on");
+        let git = work.join(".claude").join(".git");
+        fs::create_dir_all(&git).unwrap();
+        let obj = git.join("config");
+        fs::write(&obj, b"git").unwrap();
+
+        let mut o = opts(None, &[]);
+        o.include_noise = true;
+        let report = create(&[asset(&obj, 3)], &work.join("out"), &o).unwrap();
+        assert_eq!(report.entries, 1);
+        assert_eq!(report.excluded_files, 0);
+    }
+
+    #[test]
     fn non_asset_nodes_are_ignored() {
         let work = temp_dir("filter");
         let f = work.join("cache.bin");
@@ -540,7 +642,7 @@ mod tests {
         let mut node = asset(&f, 1);
         node.class = DataClass::Ephemeral;
 
-        let err = create(&[node], &work.join("out"), None, &[]).unwrap_err();
+        let err = create(&[node], &work.join("out"), &opts(None, &[])).unwrap_err();
         assert!(err.to_string().contains("没有可备份的资产"));
     }
 
@@ -551,7 +653,7 @@ mod tests {
         fs::create_dir_all(&src).unwrap();
         let a = src.join("a.md");
         fs::write(&a, b"hello").unwrap();
-        let report = create(&[asset(&a, 5)], &work.join("out"), None, &[]).unwrap();
+        let report = create(&[asset(&a, 5)], &work.join("out"), &opts(None, &[])).unwrap();
 
         // 直接把 manifest 里的 hash 改坏，模拟包被篡改
         let (mut manifest, _) = open_with_manifest(&report.path).unwrap();

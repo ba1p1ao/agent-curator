@@ -94,6 +94,8 @@ export interface BackupResult {
   sourceBytes: number;
   zipBytes: number;
   sha256: string;
+  excludedFiles: number;
+  excludedBytes: number;
   failures: [string, string][];
 }
 
@@ -128,8 +130,12 @@ export const api = {
   listRuns: () => invoke<RunInfo[]>("list_runs"),
   restore: (runId: string) => invoke<RestoreResult>("restore_run", { runId }),
   binUsage: () => invoke<{ runs: number; bytes: number; path: string }>("bin_usage"),
-  createBackup: (label: string | null, agents: string[], outDir: string | null) =>
-    invoke<BackupResult>("create_backup", { label, agents, outDir }),
+  createBackup: (
+    label: string | null,
+    agents: string[],
+    outDir: string | null,
+    includeNoise: boolean
+  ) => invoke<BackupResult>("create_backup", { label, agents, outDir, includeNoise }),
   listBackups: (dir: string | null) =>
     invoke<BackupInfo[]>("list_backups", { dir }),
   verifyBackup: (path: string) => invoke<VerifyResult>("verify_backup", { path }),

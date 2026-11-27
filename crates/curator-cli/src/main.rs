@@ -105,6 +105,9 @@ struct BackupArgs {
     /// 包名标签，例如 before-upgrade
     #[arg(long, value_name = "LABEL")]
     label: Option<String>,
+    /// 把 .git / node_modules / 日志这类可重建内容也打进包
+    #[arg(long)]
+    include_noise: bool,
 }
 
 #[derive(Args)]
@@ -690,7 +693,12 @@ fn run_backup(args: BackupArgs) -> Result<()> {
     let out_dir = resolve_backup_dir(args.out.clone());
     let root_strings: Vec<String> = outcome.roots.iter().map(|r| r.path.clone()).collect();
 
-    let report = backup::create(&nodes, &out_dir, args.label.as_deref(), &root_strings)?;
+    let options = backup::BackupOptions {
+        label: args.label.clone(),
+        roots: root_strings,
+        include_noise: args.include_noise,
+    };
+    let report = backup::create(&nodes, &out_dir, &options)?;
 
     println!(
         "备份完成：{} 项 / {} → {}",
@@ -704,6 +712,13 @@ fn run_backup(args: BackupArgs) -> Result<()> {
     }
     println!("备份包   {}", report.path.display());
     println!("校验和   {}", &report.zip_sha256[..16]);
+    if report.excluded_files > 0 {
+        println!(
+            "已排除   {} 个元数据文件 / {}（.git / node_modules / 日志；要保留请加 --include-noise）",
+            thousands(report.excluded_files as u64),
+            human_bytes(report.excluded_bytes)
+        );
+    }
     if !report.failures.is_empty() {
         println!("\n{} 项读取失败（未写入备份）：", report.failures.len());
         for (path, err) in report.failures.iter().take(10) {

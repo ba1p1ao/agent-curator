@@ -137,6 +137,8 @@ agentcurator-...zip.sha256       整包校验和，`sha256sum -c` 可直接用
 1. **只读源文件**。备份过程不改动、不移动任何原件。
 2. **逐条校验**。还原时比对 manifest 里的 sha256，不符就拒写，绝不把损坏内容盖回你的目录。
 3. **默认不覆盖**。目标已存在就跳过并列出，要覆盖必须显式 `--overwrite`。
+4. **默认排除可重建内容**。`.git/`、`node_modules/`、`__pycache__/`、`*.log`
+   不进备份包——它们能重新拉取或生成，打进去只会让包变大。需要时加 `--include-noise`。
 
 `backup` 只打包 `class: asset` 的条目——也就是 `skills/`、`agents/`、`memory/`、
 `CLAUDE.md`、`settings.json` 这一类删了不可再生的东西。缓存和会话记录不在备份范围内。

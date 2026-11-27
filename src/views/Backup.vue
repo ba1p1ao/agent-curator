@@ -21,6 +21,8 @@ const outDir = ref<string | null>(localStorage.getItem(DIR_KEY));
 const displayDir = computed(() => outDir.value ?? "~/curator-backups（默认）");
 const agents = ref<AgentListItem[]>([]);
 const selectedAgents = ref<string[]>([]);
+/// 默认排除 .git / node_modules / 日志；勾上才一起打进去
+const includeNoise = ref(false);
 const nothingSelected = computed(() => selectedAgents.value.length === 0);
 const running = ref(false);
 const verifying = ref<string | null>(null);
@@ -86,7 +88,8 @@ async function create() {
     result.value = await api.createBackup(
       label.value.trim() || null,
       selectedAgents.value,
-      outDir.value
+      outDir.value,
+      includeNoise.value
     );
     await loadList();
   } catch (e) {
@@ -162,6 +165,11 @@ onMounted(() => {
           全选
         </button>
       </div>
+      <label class="check" style="margin-top: 10px">
+        <input v-model="includeNoise" type="checkbox" />
+        连 .git / node_modules / 日志一起备份（默认排除，这些都能重建）
+      </label>
+
       <div class="row" style="margin-top: 12px">
         <span class="field">
           保存到
@@ -184,6 +192,9 @@ onMounted(() => {
         原始 {{ humanBytes(result.sourceBytes) }} → 压缩后 {{ humanBytes(result.zipBytes) }}
         包   {{ result.path }}
         SHA  {{ result.sha256 }}
+        <template v-if="result.excludedFiles">
+          排除 {{ result.excludedFiles }} 个可重建文件 / {{ humanBytes(result.excludedBytes) }}
+        </template>
         <template v-if="result.failures.length">
           {{ result.failures.length }} 项读取失败，未写入备份
         </template>

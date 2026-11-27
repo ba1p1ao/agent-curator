@@ -129,6 +129,8 @@ struct BackupDto {
     source_bytes: u64,
     zip_bytes: u64,
     sha256: String,
+    excluded_files: u64,
+    excluded_bytes: u64,
     failures: Vec<(String, String)>,
 }
 
@@ -434,8 +436,9 @@ async fn create_backup(
     label: Option<String>,
     agents: Vec<String>,
     out_dir: Option<String>,
+    include_noise: bool,
 ) -> Result<BackupDto, String> {
-    tauri::async_runtime::spawn_blocking(move || do_backup(label, agents, out_dir))
+    tauri::async_runtime::spawn_blocking(move || do_backup(label, agents, out_dir, include_noise))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
@@ -445,6 +448,7 @@ fn do_backup(
     label: Option<String>,
     agents: Vec<String>,
     out_dir: Option<String>,
+    include_noise: bool,
 ) -> Result<BackupDto> {
     let (lib, _source) = load_library()?;
     let targets = collect_targets(&lib);
@@ -465,13 +469,20 @@ fn do_backup(
 
     let roots: Vec<String> = outcome.roots.iter().map(|r| r.path.clone()).collect();
     let target = out_dir.map(PathBuf::from).unwrap_or_else(backup_dir);
-    let report = backup::create(&nodes, &target, label.as_deref(), &roots)?;
+    let options = backup::BackupOptions {
+        label,
+        roots,
+        include_noise,
+    };
+    let report = backup::create(&nodes, &target, &options)?;
     Ok(BackupDto {
         path: report.path.display().to_string(),
         entries: report.entries as u64,
         source_bytes: report.source_bytes,
         zip_bytes: report.zip_bytes,
         sha256: report.zip_sha256,
+        excluded_files: report.excluded_files as u64,
+        excluded_bytes: report.excluded_bytes,
         failures: report
             .failures
             .into_iter()
