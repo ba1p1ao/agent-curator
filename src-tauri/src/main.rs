@@ -430,14 +430,22 @@ async fn bin_usage() -> Result<UsageDto, String> {
 // ---------------------------------------------------------------- backup
 
 #[tauri::command]
-async fn create_backup(label: Option<String>, agents: Vec<String>) -> Result<BackupDto, String> {
-    tauri::async_runtime::spawn_blocking(move || do_backup(label, agents))
+async fn create_backup(
+    label: Option<String>,
+    agents: Vec<String>,
+    out_dir: Option<String>,
+) -> Result<BackupDto, String> {
+    tauri::async_runtime::spawn_blocking(move || do_backup(label, agents, out_dir))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
 
-fn do_backup(label: Option<String>, agents: Vec<String>) -> Result<BackupDto> {
+fn do_backup(
+    label: Option<String>,
+    agents: Vec<String>,
+    out_dir: Option<String>,
+) -> Result<BackupDto> {
     let (lib, _source) = load_library()?;
     let targets = collect_targets(&lib);
     if targets.is_empty() {
@@ -456,7 +464,8 @@ fn do_backup(label: Option<String>, agents: Vec<String>) -> Result<BackupDto> {
         .collect();
 
     let roots: Vec<String> = outcome.roots.iter().map(|r| r.path.clone()).collect();
-    let report = backup::create(&nodes, &backup_dir(), label.as_deref(), &roots)?;
+    let target = out_dir.map(PathBuf::from).unwrap_or_else(backup_dir);
+    let report = backup::create(&nodes, &target, label.as_deref(), &roots)?;
     Ok(BackupDto {
         path: report.path.display().to_string(),
         entries: report.entries as u64,
@@ -472,9 +481,9 @@ fn do_backup(label: Option<String>, agents: Vec<String>) -> Result<BackupDto> {
 }
 
 #[tauri::command]
-async fn list_backups() -> Result<Vec<BackupInfoDto>, String> {
-    tauri::async_runtime::spawn_blocking(|| -> Result<Vec<BackupInfoDto>> {
-        let dir = backup_dir();
+async fn list_backups(dir: Option<String>) -> Result<Vec<BackupInfoDto>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<BackupInfoDto>> {
+        let dir = dir.map(PathBuf::from).unwrap_or_else(backup_dir);
         if !dir.is_dir() {
             return Ok(Vec::new());
         }
@@ -585,6 +594,7 @@ async fn list_agents() -> Result<Vec<AgentListItem>, String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             scan_all,
             plan_clean,

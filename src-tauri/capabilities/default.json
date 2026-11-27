@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "AgentCurator 默认权限：只允许窗口基础能力，不开放文件系统插件",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "dialog:default"]
 }

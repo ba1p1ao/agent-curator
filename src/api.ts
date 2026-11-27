@@ -128,9 +128,10 @@ export const api = {
   listRuns: () => invoke<RunInfo[]>("list_runs"),
   restore: (runId: string) => invoke<RestoreResult>("restore_run", { runId }),
   binUsage: () => invoke<{ runs: number; bytes: number; path: string }>("bin_usage"),
-  createBackup: (label: string | null, agents: string[]) =>
-    invoke<BackupResult>("create_backup", { label, agents }),
-  listBackups: () => invoke<BackupInfo[]>("list_backups"),
+  createBackup: (label: string | null, agents: string[], outDir: string | null) =>
+    invoke<BackupResult>("create_backup", { label, agents, outDir }),
+  listBackups: (dir: string | null) =>
+    invoke<BackupInfo[]>("list_backups", { dir }),
   verifyBackup: (path: string) => invoke<VerifyResult>("verify_backup", { path }),
 };
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ErrorPanel from "../components/ErrorPanel.vue";
+import { open } from "@tauri-apps/plugin-dialog";
 import { computed, onMounted, ref } from "vue";
 import {
   api,
@@ -13,7 +14,11 @@ import {
   type VerifyResult,
 } from "../api";
 
+const DIR_KEY = "curator.backupDir";
 const label = ref("");
+/// null 表示用默认目录（~/curator-backups）
+const outDir = ref<string | null>(localStorage.getItem(DIR_KEY));
+const displayDir = computed(() => outDir.value ?? "~/curator-backups（默认）");
 const agents = ref<AgentListItem[]>([]);
 const selectedAgents = ref<string[]>([]);
 const nothingSelected = computed(() => selectedAgents.value.length === 0);
@@ -38,7 +43,7 @@ async function loadAgents() {
 async function loadList() {
   loadingList.value = true;
   try {
-    backups.value = await api.listBackups();
+    backups.value = await api.listBackups(outDir.value);
   } catch (e) {
     err.value = errorText(e);
   } finally {
@@ -46,14 +51,42 @@ async function loadList() {
   }
 }
 
+/// 让用户挑一个目录。返回是否选定。
+async function pickDir(): Promise<boolean> {
+  const picked = await open({
+    directory: true,
+    multiple: false,
+    title: "选择备份保存位置",
+  });
+  if (typeof picked !== "string") return false;
+  outDir.value = picked;
+  localStorage.setItem(DIR_KEY, picked);
+  await loadList();
+  return true;
+}
+
+function useDefault() {
+  outDir.value = null;
+  localStorage.removeItem(DIR_KEY);
+  loadList();
+}
+
 async function create() {
-  running.value = true;
   err.value = "";
   verifyResult.value = null;
+
+  // 还没选过位置就先问一次；取消就什么都不做，绝不默默写到默认目录
+  if (!outDir.value) {
+    const ok = await pickDir();
+    if (!ok) return;
+  }
+
+  running.value = true;
   try {
     result.value = await api.createBackup(
       label.value.trim() || null,
-      selectedAgents.value
+      selectedAgents.value,
+      outDir.value
     );
     await loadList();
   } catch (e) {
@@ -129,8 +162,18 @@ onMounted(() => {
           全选
         </button>
       </div>
-      <p class="faint" style="margin: 10px 0 0">
-        输出到 ~/curator-backups，源文件只读，不会被改动。
+      <div class="row" style="margin-top: 12px">
+        <span class="field">
+          保存到
+          <span class="mono dir-path" :title="outDir ?? ''">{{ displayDir }}</span>
+        </span>
+        <button class="btn small" :disabled="running" @click="pickDir">更改…</button>
+        <button v-if="outDir" class="btn small" :disabled="running" @click="useDefault">
+          用默认
+        </button>
+      </div>
+      <p class="faint" style="margin: 8px 0 0">
+        源文件只读，不会被改动。首次备份会先请你选一个位置。
       </p>
     </div>
 
