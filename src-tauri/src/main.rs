@@ -541,6 +541,46 @@ async fn rules_info() -> Result<RulesInfoDto, String> {
     .map_err(|e| e.to_string())
 }
 
+// ---------------------------------------------------------------- agents
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentListItem {
+    id: String,
+    name: String,
+    /// 本机是否真的存在数据目录
+    installed: bool,
+    paths: Vec<String>,
+}
+
+/// 给界面做「选择要清理哪个 agent」的候选列表。
+/// 一次轻量调用，不扫描文件，只读规则与目录是否存在。
+#[tauri::command]
+async fn list_agents() -> Result<Vec<AgentListItem>, String> {
+    tauri::async_runtime::spawn_blocking(|| -> Result<Vec<AgentListItem>> {
+        let (lib, _source) = load_library()?;
+        let mut items = Vec::new();
+        for (id, name) in &lib.agents {
+            let paths: Vec<String> = lib
+                .roots
+                .iter()
+                .filter(|root| &root.agent == id && root.path.exists())
+                .map(|root| root.path.display().to_string())
+                .collect();
+            items.push(AgentListItem {
+                id: id.clone(),
+                name: name.clone(),
+                installed: !paths.is_empty(),
+                paths,
+            });
+        }
+        Ok(items)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------- main
 
 fn main() {
@@ -555,7 +595,8 @@ fn main() {
             create_backup,
             list_backups,
             verify_backup,
-            rules_info
+            rules_info,
+            list_agents
         ])
         .run(tauri::generate_context!())
         .expect("AgentCurator 启动失败");

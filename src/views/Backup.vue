@@ -1,19 +1,22 @@
 <script setup lang="ts">
 import ErrorPanel from "../components/ErrorPanel.vue";
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import {
   api,
   errorText,
   humanBytes,
   shortPath,
   thousands,
+  type AgentListItem,
   type BackupInfo,
   type BackupResult,
   type VerifyResult,
 } from "../api";
 
 const label = ref("");
-const agentFilter = ref("");
+const agents = ref<AgentListItem[]>([]);
+const selectedAgents = ref<string[]>([]);
+const nothingSelected = computed(() => selectedAgents.value.length === 0);
 const running = ref(false);
 const verifying = ref<string | null>(null);
 const err = ref("");
@@ -21,6 +24,16 @@ const result = ref<BackupResult | null>(null);
 const verifyResult = ref<{ name: string; data: VerifyResult } | null>(null);
 const backups = ref<BackupInfo[]>([]);
 const loadingList = ref(true);
+
+async function loadAgents() {
+  try {
+    const list = await api.listAgents();
+    agents.value = list.filter((a) => a.installed);
+    selectedAgents.value = agents.value.map((a) => a.id);
+  } catch (e) {
+    err.value = errorText(e);
+  }
+}
 
 async function loadList() {
   loadingList.value = true;
@@ -38,11 +51,10 @@ async function create() {
   err.value = "";
   verifyResult.value = null;
   try {
-    const agents = agentFilter.value
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    result.value = await api.createBackup(label.value.trim() || null, agents);
+    result.value = await api.createBackup(
+      label.value.trim() || null,
+      selectedAgents.value
+    );
     await loadList();
   } catch (e) {
     err.value = errorText(e);
@@ -64,7 +76,10 @@ async function verify(item: BackupInfo) {
   }
 }
 
-onMounted(loadList);
+onMounted(() => {
+  loadAgents();
+  loadList();
+});
 </script>
 
 <template>
@@ -85,13 +100,33 @@ onMounted(loadList);
           标签
           <input v-model="label" class="input" placeholder="before-upgrade（可空）" />
         </span>
-        <span class="field">
-          仅限 agent
-          <input v-model="agentFilter" class="input" placeholder="全部" />
-        </span>
-        <button class="btn primary" :disabled="running" @click="create">
+        <button
+          class="btn primary"
+          :disabled="running || nothingSelected"
+          @click="create"
+        >
           <span v-if="running" class="spinner" />
           {{ running ? " 打包中…" : "开始备份" }}
+        </button>
+      </div>
+      <div class="chips">
+        <span class="chips-label">备份范围</span>
+        <label
+          v-for="agent in agents"
+          :key="agent.id"
+          class="chip"
+          :class="{ on: selectedAgents.includes(agent.id) }"
+        >
+          <input v-model="selectedAgents" type="checkbox" :value="agent.id" />
+          {{ agent.name }}
+        </label>
+        <span v-if="!agents.length" class="faint">未检测到已安装的 agent</span>
+        <button
+          v-if="agents.length"
+          class="chip ghost"
+          @click="selectedAgents = agents.map((a) => a.id)"
+        >
+          全选
         </button>
       </div>
       <p class="faint" style="margin: 10px 0 0">

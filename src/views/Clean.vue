@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import ErrorPanel from "../components/ErrorPanel.vue";
-import { computed, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import {
   api,
   classLabel,
@@ -9,6 +9,7 @@ import {
   riskLabel,
   shortPath,
   thousands,
+  type AgentListItem,
   type ApplyResult,
   type CleanOptions,
   type Plan,
@@ -19,7 +20,8 @@ const emit = defineEmits<{ (e: "navigate", tab: string): void }>();
 const includeReview = ref(false);
 const includeRunning = ref(false);
 const minSizeMb = ref(0);
-const agentFilter = ref("");
+const agents = ref<AgentListItem[]>([]);
+const selectedAgents = ref<string[]>([]);
 const confirmed = ref(false);
 
 const planning = ref(false);
@@ -32,11 +34,34 @@ const options = computed<CleanOptions>(() => ({
   includeReview: includeReview.value,
   includeRunning: includeRunning.value,
   minSize: Math.max(0, Math.round(minSizeMb.value * 1024 * 1024)),
-  agents: agentFilter.value
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean),
+  agents: selectedAgents.value,
 }));
+
+const nothingSelected = computed(() => selectedAgents.value.length === 0);
+
+async function loadAgents() {
+  try {
+    const list = await api.listAgents();
+    agents.value = list.filter((a) => a.installed);
+    selectedAgents.value = agents.value.map((a) => a.id);
+  } catch (e) {
+    err.value = errorText(e);
+  }
+}
+
+onMounted(loadAgents);
+
+// 筛选条件一变，之前生成的计划就作废——否则"看到的"和"将要执行的"不是同一份
+watch(
+  [includeReview, includeRunning, minSizeMb, selectedAgents],
+  () => {
+    if (plan.value) {
+      plan.value = null;
+      confirmed.value = false;
+    }
+  },
+  { deep: true }
+);
 
 function sum(bytes: number[]): number {
   return bytes.reduce((a, b) => a + b, 0);
@@ -109,10 +134,27 @@ async function applyPlan() {
           <input v-model.number="minSizeMb" class="input" style="min-width: 70px" type="number" min="0" />
           MB 的单项
         </span>
-        <span class="field">
-          仅限 agent
-          <input v-model="agentFilter" class="input" placeholder="codex, workbuddy" />
-        </span>
+      </div>
+
+      <div class="chips">
+        <span class="chips-label">处理范围</span>
+        <label
+          v-for="agent in agents"
+          :key="agent.id"
+          class="chip"
+          :class="{ on: selectedAgents.includes(agent.id) }"
+        >
+          <input v-model="selectedAgents" type="checkbox" :value="agent.id" />
+          {{ agent.name }}
+        </label>
+        <span v-if="!agents.length" class="faint">未检测到已安装的 agent</span>
+        <button
+          v-if="agents.length"
+          class="chip ghost"
+          @click="selectedAgents = agents.map((a) => a.id)"
+        >
+          全选
+        </button>
       </div>
       <div v-if="includeRunning" class="banner danger" style="margin-top: 12px">
         允许清理运行中的 agent 有损坏会话与索引库的风险。确认相关 agent 已退出后再勾选。
@@ -120,10 +162,15 @@ async function applyPlan() {
     </div>
 
     <div class="row" style="margin-bottom: 14px">
-      <button class="btn primary" :disabled="planning || applying" @click="makePlan">
+      <button
+        class="btn primary"
+        :disabled="planning || applying || nothingSelected"
+        @click="makePlan"
+      >
         <span v-if="planning" class="spinner" />
         {{ planning ? " 生成中…" : "生成清理计划" }}
       </button>
+      <span v-if="nothingSelected" class="faint">请至少选择一个 agent</span>
       <span v-if="plan" class="muted">
         将移动 {{ thousands(plan.items.length) }} 项 / {{ humanBytes(planBytes) }}
       </span>

@@ -104,6 +104,13 @@ export interface VerifyResult {
   missing: string[];
 }
 
+export interface AgentListItem {
+  id: string;
+  name: string;
+  installed: boolean;
+  paths: string[];
+}
+
 export interface CleanOptions {
   includeReview: boolean;
   includeRunning: boolean;
@@ -117,6 +124,7 @@ export const api = {
   scan: () => invoke<ScanResult>("scan_all"),
   plan: (opts: CleanOptions) => invoke<Plan>("plan_clean", { opts }),
   apply: (opts: CleanOptions) => invoke<ApplyResult>("apply_clean", { opts }),
+  listAgents: () => invoke<AgentListItem[]>("list_agents"),
   listRuns: () => invoke<RunInfo[]>("list_runs"),
   restore: (runId: string) => invoke<RestoreResult>("restore_run", { runId }),
   binUsage: () => invoke<{ runs: number; bytes: number; path: string }>("bin_usage"),
