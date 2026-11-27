@@ -110,7 +110,7 @@ pub fn create(
     let mut entries: Vec<BackupEntry> = Vec::new();
 
     for node in assets {
-        let stored = stored_name(&node.path);
+        let stored = stored_name(&node.path, roots);
         let mut source = match File::open(&node.path) {
             Ok(f) => f,
             Err(e) => {
@@ -224,10 +224,7 @@ pub fn restore(zip_path: &Path, to: Option<&Path>, overwrite: bool) -> Result<Re
 
     for entry in &manifest.entries {
         let target = match to {
-            Some(root) => {
-                let rel = original_relative(&entry.original);
-                root.join(rel)
-            }
+            Some(root) => root.join(safe_relative(&entry.stored)),
             None => entry.original.clone(),
         };
 
@@ -312,19 +309,50 @@ fn open_with_manifest(zip_path: &Path) -> Result<(BackupManifest, ZipArchive<Fil
     Ok((manifest, archive))
 }
 
-/// zip 内条目名：去掉盘符冒号，保留完整路径层级。
-/// `C:/Users/x/.claude/skills/a.md` -> `C/Users/x/.claude/skills/a.md`
-fn stored_name(path: &Path) -> String {
-    let s = path.to_string_lossy().replace('\\', "/");
-    s.replace(':', "").trim_start_matches('/').to_string()
+/// zip 内条目名：以 agent 根目录为基准，只保留它下面那一段。
+///
+/// `C:/Users/x/.claude/skills/a.md` + 根 `C:/Users/x/.claude` -> `.claude/skills/a.md`
+///
+/// 为什么不用绝对路径：备份包是要拿去换机、传到别处的，里面塞
+/// `C/Users/admin/...` 既暴露了本机用户名，解压时也要多套几层空目录。
+fn stored_name(path: &Path, roots: &[String]) -> String {
+    let full = path.to_string_lossy().replace('\\', "/");
+
+    // 找最长的匹配根，避免 `~/.workbuddy` 被 `~/.work` 这类短前缀误伤
+    let mut best: Option<String> = None;
+    for root in roots {
+        let root = root.replace('\\', "/");
+        let root = root.trim_end_matches('/').to_string();
+        let hit = full == root || full.starts_with(&(root.clone() + "/"));
+        if hit && best.as_ref().map(|b| root.len() > b.len()).unwrap_or(true) {
+            best = Some(root);
+        }
+    }
+
+    if let Some(root) = best {
+        let root_name = root.rsplit('/').next().unwrap_or("root").to_string();
+        let rel = full[root.len()..].trim_start_matches('/');
+        return if rel.is_empty() {
+            root_name
+        } else {
+            format!("{}/{}", root_name, rel)
+        };
+    }
+
+    // 没匹配到已知根（例如用了 --root 指向根目录之外）：退回老办法
+    full.replace(':', "").trim_start_matches('/').to_string()
 }
 
-/// 用于 `--to` 还原时重建目录结构：去掉盘符前缀。
-fn original_relative(path: &Path) -> PathBuf {
-    let s = path.to_string_lossy().replace('\\', "/");
-    let s = s.replace(':', "");
-    let s = s.trim_start_matches('/');
-    PathBuf::from(s)
+/// 把 zip 内条目名安全地变成相对路径，挡住 `..` 与盘符这类越界写法。
+fn safe_relative(stored: &str) -> PathBuf {
+    let mut out = PathBuf::new();
+    for seg in stored.split('/') {
+        if seg.is_empty() || seg == "." || seg == ".." || seg.contains(':') {
+            continue;
+        }
+        out.push(seg);
+    }
+    out
 }
 
 fn sanitize(label: &str) -> String {
@@ -477,6 +505,31 @@ mod tests {
         let found = walk(&target);
         assert_eq!(found.len(), 1);
         assert!(found[0].to_string_lossy().ends_with("x.md"));
+    }
+
+    #[test]
+    fn stored_paths_are_relative_to_agent_root() {
+        let work = temp_dir("relative");
+        let root = work.join(".claude");
+        let skills = root.join("skills");
+        fs::create_dir_all(&skills).unwrap();
+        let file = skills.join("a.md");
+        fs::write(&file, b"x").unwrap();
+
+        let out = work.join("out");
+        let roots = vec![root.display().to_string()];
+        let report = create(&[asset(&file, 1)], &out, None, &roots).unwrap();
+
+        let manifest = read_manifest(&report.path).unwrap();
+        assert_eq!(
+            manifest.entries[0].stored, ".claude/skills/a.md",
+            "备份包内不该出现本机绝对路径"
+        );
+
+        // 还原到别处时，应当直接展开成 .claude/skills/a.md
+        let dest = work.join("dest");
+        restore(&report.path, Some(&dest), false).unwrap();
+        assert!(dest.join(".claude").join("skills").join("a.md").exists());
     }
 
     #[test]

@@ -128,7 +128,7 @@ $ curator backup --agent claude-code --label verify
 ```
 agentcurator-<label>-<时间>.zip
 ├── agentcurator-manifest.json   每个文件的原始路径、体积、mtime、sha256
-└── C/Users/.../skills/...       按原始路径展开（去掉盘符冒号，保证跨平台）
+└── .claude/skills/...           以 agent 目录为根展开，不含本机绝对路径
 agentcurator-...zip.sha256       整包校验和，`sha256sum -c` 可直接用
 ```
 
