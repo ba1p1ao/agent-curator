@@ -6,7 +6,7 @@ members = ["crates/curator-core", "crates/curator-cli"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/tomiyasu0428/agent-curator"
+repository = "https://github.com/ba1p1ao/agent-curator"
 
 [workspace.dependencies]
 anyhow = "1.0"
