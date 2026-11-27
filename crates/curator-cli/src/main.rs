@@ -11,6 +11,7 @@ use anyhow::{bail, Context, Result};
 use chrono::Local;
 use clap::{Args, Parser, Subcommand};
 use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
+use curator_core::agents;
 use curator_core::backup;
 use curator_core::model::DataClass;
 use curator_core::plan::{self, PlanOptions};
@@ -50,6 +51,8 @@ struct Cli {
 enum Cmd {
     /// 环境自检：规则来源、隔离区、备份、进程状态
     Doctor,
+    /// 列出本机已安装的 AI agent（含规则未覆盖的）
+    Agents,
     /// 扫描已安装的 AI agent 数据目录并输出体检报告（只读）
     Scan(ScanArgs),
     /// 生成清理计划并移入隔离区（默认 dry-run）
@@ -222,6 +225,7 @@ fn main() -> Result<()> {
     };
     match cmd {
         Cmd::Doctor => run_doctor(),
+        Cmd::Agents => run_agents(),
         Cmd::Scan(args) => run_scan(args),
         Cmd::Clean(args) => run_clean(args),
         Cmd::Restore(args) => run_restore(args),
@@ -370,6 +374,19 @@ fn run_doctor() -> Result<()> {
             }
         );
     }
+
+    let detected = agents::detect_all(&lib);
+    let missing = agents::uncovered(&detected);
+    println!("\n已安装 agent");
+    println!(
+        "  发现 {} 个已安装{}",
+        detected.len(),
+        if missing.is_empty() {
+            String::new()
+        } else {
+            format!("，其中 {} 个缺少规则（curator agents 查看）", missing.len())
+        }
+    );
 
     println!("\n进程");
     match procs::detect_running(&lib) {
@@ -811,6 +828,64 @@ fn resolve_backup_dir(arg: Option<PathBuf>) -> PathBuf {
         return PathBuf::from(env);
     }
     home_dir().join("curator-backups")
+}
+
+// ---------------------------------------------------------------- agents
+
+fn run_agents() -> Result<()> {
+    let (lib, source) = load_rules(None)?;
+
+    eprintln!("探测中 ...");
+    let found = agents::detect_all(&lib);
+
+    if found.is_empty() {
+        println!("没有检测到任何已知 AI agent。");
+        println!();
+        println!("判定依据是「可执行文件在 PATH 里」或「配置目录存在」，");
+        println!("两者都没有就不报。装过但从未运行过的 agent 可能不会被发现。");
+        return Ok(());
+    }
+
+    let mut table = new_table(vec!["Agent", "版本", "数据目录", "规则"]);
+    for agent in &found {
+        table.add_row(vec![
+            agent.name.clone(),
+            agent
+                .version
+                .clone()
+                .unwrap_or_else(|| "已发现".to_string()),
+            truncate(
+                &agent
+                    .dirs
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "(仅发现命令)".to_string()),
+                48,
+            ),
+            if agent.has_rules {
+                "已覆盖".to_string()
+            } else {
+                "缺失".to_string()
+            },
+        ]);
+    }
+    println!("{table}");
+    println!("共 {} 个已安装 · 规则来源 {}", found.len(), source.label());
+
+    let missing = agents::uncovered(&found);
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    println!("\n以下 {} 个已安装，但规则库没有覆盖：", missing.len());
+    for agent in missing {
+        println!("  · {}（{}）", agent.name, agent.note);
+    }
+    println!();
+    println!("这些目录里的文件会被判成「未识别」并默认保留 —— 不会被误删，");
+    println!("但也不会被清理或备份。要支持它们，在 rules/ 里加一份 yaml，");
+    println!("照 rules/claude-code.yaml 的样子写就行。");
+    Ok(())
 }
 
 // ---------------------------------------------------------------- rules

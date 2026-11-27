@@ -3,6 +3,7 @@
 //! M1 阶段只做三件事：**发现 → 归类 → 出报告**，全程只读，
 //! 不包含任何删除、移动或写入被扫描目录的代码路径。
 
+pub mod agents;
 pub mod aggregate;
 pub mod backup;
 pub mod classifier;

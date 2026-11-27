@@ -42,6 +42,7 @@ curator clean --apply   # 确认后执行，进隔离区
 
 | 命令 | 用途 |
 |---|---|
+| `curator agents` | 探测本机装了哪些 AI agent，标出规则未覆盖的 |
 | `curator doctor` | 环境自检：规则来源、隔离区、备份、进程状态 |
 | `curator backup --label before-upgrade` | 备份 skills / memory / 配置 |
 | `curator backup-verify <zip>` | 逐条比对 sha256 |

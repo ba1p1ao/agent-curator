@@ -111,6 +111,8 @@ export interface AgentListItem {
   name: string;
   installed: boolean;
   paths: string[];
+  hasRules: boolean;
+  version: string | null;
 }
 
 export interface CleanOptions {

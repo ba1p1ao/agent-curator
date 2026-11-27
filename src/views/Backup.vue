@@ -20,6 +20,7 @@ const label = ref("");
 const outDir = ref<string | null>(localStorage.getItem(DIR_KEY));
 const displayDir = computed(() => outDir.value ?? "~/curator-backups（默认）");
 const agents = ref<AgentListItem[]>([]);
+const uncovered = ref<string[]>([]);
 const selectedAgents = ref<string[]>([]);
 /// 默认排除 .git / node_modules / 日志；勾上才一起打进去
 const includeNoise = ref(false);
@@ -35,7 +36,8 @@ const loadingList = ref(true);
 async function loadAgents() {
   try {
     const list = await api.listAgents();
-    agents.value = list.filter((a) => a.installed);
+    agents.value = list.filter((a) => a.installed && a.hasRules);
+    uncovered.value = list.filter((a) => a.installed && !a.hasRules).map((a) => a.name);
     selectedAgents.value = agents.value.map((a) => a.id);
   } catch (e) {
     err.value = errorText(e);
@@ -157,6 +159,9 @@ onMounted(() => {
           {{ agent.name }}
         </label>
         <span v-if="!agents.length" class="faint">未检测到已安装的 agent</span>
+        <span v-if="uncovered.length" class="faint">
+          · {{ uncovered.join("、") }} 已安装但暂无规则，无法备份
+        </span>
         <button
           v-if="agents.length"
           class="chip ghost"

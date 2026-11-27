@@ -20,6 +20,7 @@ compile_error!(
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
+use curator_core::agents as agent_probe;
 use curator_core::backup::{self, BackupManifest};
 use curator_core::model::DataClass;
 use curator_core::plan::{self, Plan, PlanOptions};
@@ -568,9 +569,11 @@ async fn rules_info() -> Result<RulesInfoDto, String> {
 struct AgentListItem {
     id: String,
     name: String,
-    /// 本机是否真的存在数据目录
     installed: bool,
     paths: Vec<String>,
+    /// 规则库是否覆盖（没覆盖的会被判成"未识别"，不能清理也不能备份）
+    has_rules: bool,
+    version: Option<String>,
 }
 
 /// 给界面做「选择要清理哪个 agent」的候选列表。
@@ -579,22 +582,18 @@ struct AgentListItem {
 async fn list_agents() -> Result<Vec<AgentListItem>, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<Vec<AgentListItem>> {
         let (lib, _source) = load_library()?;
-        let mut items = Vec::new();
-        for (id, name) in &lib.agents {
-            let paths: Vec<String> = lib
-                .roots
-                .iter()
-                .filter(|root| &root.agent == id && root.path.exists())
-                .map(|root| root.path.display().to_string())
-                .collect();
-            items.push(AgentListItem {
-                id: id.clone(),
-                name: name.clone(),
-                installed: !paths.is_empty(),
-                paths,
-            });
-        }
-        Ok(items)
+        // 用探测而不是只看规则里的 agent：本机可能装着规则还没覆盖的
+        Ok(agent_probe::detect_all(&lib)
+            .into_iter()
+            .map(|agent| AgentListItem {
+                id: agent.id,
+                name: agent.name,
+                installed: true,
+                paths: agent.dirs,
+                has_rules: agent.has_rules,
+                version: agent.version,
+            })
+            .collect())
     })
     .await
     .map_err(|e| e.to_string())?

@@ -21,6 +21,8 @@ const includeReview = ref(false);
 const includeRunning = ref(false);
 const minSizeMb = ref(0);
 const agents = ref<AgentListItem[]>([]);
+/// 装了但规则库没覆盖的，只提示不参与
+const uncovered = ref<string[]>([]);
 const selectedAgents = ref<string[]>([]);
 const confirmed = ref(false);
 
@@ -42,7 +44,8 @@ const nothingSelected = computed(() => selectedAgents.value.length === 0);
 async function loadAgents() {
   try {
     const list = await api.listAgents();
-    agents.value = list.filter((a) => a.installed);
+    agents.value = list.filter((a) => a.installed && a.hasRules);
+    uncovered.value = list.filter((a) => a.installed && !a.hasRules).map((a) => a.name);
     selectedAgents.value = agents.value.map((a) => a.id);
   } catch (e) {
     err.value = errorText(e);
@@ -148,6 +151,9 @@ async function applyPlan() {
           {{ agent.name }}
         </label>
         <span v-if="!agents.length" class="faint">未检测到已安装的 agent</span>
+        <span v-if="uncovered.length" class="faint">
+          · {{ uncovered.join("、") }} 已安装但暂无规则，本次不处理
+        </span>
         <button
           v-if="agents.length"
           class="chip ghost"
