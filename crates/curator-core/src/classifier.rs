@@ -6,8 +6,8 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::model::{Action, DataClass, Node};
-use crate::rules::RuleLibrary;
+use crate::model::{Action, DataClass, Node, Risk};
+use crate::rules::{RuleEntry, RuleLibrary};
 use crate::util::normalize_path;
 
 /// 当前 Unix 秒。整轮扫描只取一次，避免每条文件都做系统调用。
@@ -18,7 +18,65 @@ pub fn now_secs() -> i64 {
         .unwrap_or(0)
 }
 
-/// 对单个文件做分类。纯函数（除时间外无副作用），便于单测。
+/// 一次分类的结果，借用规则库里的字段，不复制字符串。
+///
+/// 扫描时绝大多数文件只用于聚合统计，不需要保留完整 `Node`；
+/// 用这个轻量结构可以省掉每个文件的 3-4 次分配。
+pub struct Hit<'a> {
+    pub class: DataClass,
+    pub risk: Option<Risk>,
+    pub action: Action,
+    pub rule_id: Option<&'a str>,
+    pub note: Option<&'a str>,
+}
+
+/// 把一次匹配结果转成轻量分类结论。
+pub fn hit_from(entry: Option<&RuleEntry>) -> Hit<'_> {
+    match entry {
+        Some(entry) => Hit {
+            class: entry.class,
+            risk: Some(entry.risk),
+            action: entry.action,
+            rule_id: Some(entry.id.as_str()),
+            note: entry.note.as_deref(),
+        },
+        None => Hit {
+            class: DataClass::Unknown,
+            risk: None,
+            action: Action::Review,
+            rule_id: None,
+            note: None,
+        },
+    }
+}
+
+/// 对已归一化的路径做分类，`scratch` 由调用方在循环外复用。
+pub fn classify_light<'a>(
+    normalized: &str,
+    mtime_secs: Option<i64>,
+    lib: &'a RuleLibrary,
+    now: i64,
+    scratch: &mut Vec<usize>,
+) -> Hit<'a> {
+    match lib.match_best_into(normalized, mtime_secs, now, scratch) {
+        Some(entry) => Hit {
+            class: entry.class,
+            risk: Some(entry.risk),
+            action: entry.action,
+            rule_id: Some(entry.id.as_str()),
+            note: entry.note.as_deref(),
+        },
+        None => Hit {
+            class: DataClass::Unknown,
+            risk: None,
+            action: Action::Review,
+            rule_id: None,
+            note: None,
+        },
+    }
+}
+
+/// 对单个文件做分类，产出完整 `Node`。纯函数（除时间外无副作用），便于单测。
 pub fn classify(
     path: &Path,
     size: u64,
@@ -28,30 +86,19 @@ pub fn classify(
     now: i64,
 ) -> Node {
     let normalized = normalize_path(path);
+    let mut scratch = Vec::new();
+    let hit = classify_light(&normalized, mtime_secs, lib, now, &mut scratch);
 
-    match lib.match_best(&normalized, mtime_secs, now) {
-        Some(entry) => Node {
-            path: path.to_path_buf(),
-            size,
-            mtime: mtime_secs,
-            agent: root_agent.to_string(),
-            class: entry.class,
-            risk: Some(entry.risk),
-            action: entry.action,
-            rule_id: Some(entry.id.clone()),
-            note: entry.note.clone(),
-        },
-        None => Node {
-            path: path.to_path_buf(),
-            size,
-            mtime: mtime_secs,
-            agent: root_agent.to_string(),
-            class: DataClass::Unknown,
-            risk: None,
-            action: Action::Review,
-            rule_id: None,
-            note: None,
-        },
+    Node {
+        path: path.to_path_buf(),
+        size,
+        mtime: mtime_secs,
+        agent: root_agent.to_string(),
+        class: hit.class,
+        risk: hit.risk,
+        action: hit.action,
+        rule_id: hit.rule_id.map(str::to_string),
+        note: hit.note.map(str::to_string),
     }
 }
 

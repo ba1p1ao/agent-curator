@@ -8,12 +8,15 @@
 use std::path::PathBuf;
 use std::time::{Instant, UNIX_EPOCH};
 
-use jwalk::WalkDir;
+use jwalk::WalkDirGeneric;
 
 use crate::aggregate::Aggregates;
-use crate::classifier::{classify, now_secs};
+use crate::classifier::{hit_from, now_secs};
 use crate::model::{DataClass, Node};
 use crate::rules::RuleLibrary;
+
+/// 并行阶段读好的文件元数据：(体积, mtime 秒)
+type EntryMeta = (u64, Option<i64>);
 use crate::util::normalize_path;
 
 /// 一个待扫描的根目录。
@@ -133,9 +136,33 @@ where
         let mut bytes = 0u64;
         let mut errors = 0u64;
 
-        let walker = WalkDir::new(&target.path)
+        // 关键：把 stat 挪到并行 worker 里。
+        //
+        // jwalk 的 DirEntry::metadata() 每次调用都会重新 symlink_metadata，
+        // 而且调用点在消费线程上 —— 十万个文件就是十万次串行 syscall，
+        // 实测占了扫描总时间的一半以上。process_read_dir 在 rayon 线程池里执行，
+        // 在这里把体积和 mtime 读出来塞进 client_state，主循环就只剩纯计算。
+        let walker = WalkDirGeneric::<((), Option<EntryMeta>)>::new(&target.path)
             .skip_hidden(false)
-            .follow_links(false);
+            .follow_links(false)
+            .process_read_dir(|_depth, _path, _state, children| {
+                for child in children.iter_mut().flatten() {
+                    if child.file_type().is_dir() {
+                        continue;
+                    }
+                    child.client_state = child.metadata().ok().map(|md| {
+                        let mtime = md
+                            .modified()
+                            .ok()
+                            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs() as i64);
+                        (md.len(), mtime)
+                    });
+                }
+            });
+
+        // 循环外复用的匹配缓冲，避免每个文件都分配一个 Vec
+        let mut scratch: Vec<usize> = Vec::with_capacity(8);
 
         for entry in walker {
             let entry = match entry {
@@ -151,33 +178,39 @@ where
                 continue;
             }
 
-            let metadata = match entry.metadata() {
-                Ok(m) => m,
-                Err(_) => {
+            // 体积与 mtime 已在并行阶段读好；None 表示那个文件的 stat 失败了
+            let (size, mtime) = match entry.client_state {
+                Some(meta) => meta,
+                None => {
                     errors += 1;
                     continue;
                 }
             };
 
-            let size = metadata.len();
-            let mtime = metadata
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_secs() as i64);
-
             let path = entry.path();
-            let node = classify(&path, size, mtime, &target.agent, lib, now);
-            agg.add(&node);
+            let normalized = normalize_path(&path);
+            let hit = hit_from(lib.match_best_into(&normalized, mtime, now, &mut scratch));
+            agg.add_hit(&target.agent, size, &hit, &path);
 
+            // 只有真要保留的条目才构造完整 Node（含 4 处字符串复制）
             let wanted = (opts.collect_candidates
                 && matches!(
-                    node.class,
+                    hit.class,
                     DataClass::Ephemeral | DataClass::Product | DataClass::Workspace
                 ))
-                || (opts.collect_assets && node.class == DataClass::Asset);
+                || (opts.collect_assets && hit.class == DataClass::Asset);
             if wanted {
-                candidates.push(node);
+                candidates.push(Node {
+                    path: path.to_path_buf(),
+                    size,
+                    mtime,
+                    agent: target.agent.clone(),
+                    class: hit.class,
+                    risk: hit.risk,
+                    action: hit.action,
+                    rule_id: hit.rule_id.map(str::to_string),
+                    note: hit.note.map(str::to_string),
+                });
             }
 
             files += 1;

@@ -64,90 +64,118 @@ pub struct Aggregates {
 const UNMATCHED_CAP: usize = 2000;
 
 impl Aggregates {
-    pub fn add(&mut self, node: &Node) {
+    /// 热路径：直接吃分类结果，避免为每个文件构造完整 `Node`。
+    ///
+    /// 关键点是**命中时不 clone key**：老实现每次 `entry(key.clone())` 都会分配，
+    /// 十万级文件下这类分配比匹配本身还贵。
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_hit(
+        &mut self,
+        agent: &str,
+        size: u64,
+        hit: &crate::classifier::Hit<'_>,
+        path: &std::path::Path,
+    ) {
         self.total_files += 1;
-        self.total_bytes += node.size;
+        self.total_bytes += size;
 
-        self.by_agent
-            .entry(node.agent.clone())
-            .or_default()
-            .add(node.size);
-        self.by_class.entry(node.class).or_default().add(node.size);
+        if let Some(bucket) = self.by_agent.get_mut(agent) {
+            bucket.add(size);
+        } else {
+            let mut bucket = Bucket::default();
+            bucket.add(size);
+            self.by_agent.insert(agent.to_string(), bucket);
+        }
+        self.by_class.entry(hit.class).or_default().add(size);
 
-        let key = node
-            .rule_id
-            .clone()
-            .unwrap_or_else(|| "unmatched".to_string());
-        let risk = node.risk.unwrap_or(Risk::High);
-        let agg = self.by_rule.entry(key).or_insert_with(|| RuleAgg {
-            rule_id: node
-                .rule_id
-                .clone()
-                .unwrap_or_else(|| "unmatched".to_string()),
-            agent: node.agent.clone(),
-            class: node.class,
-            risk,
-            action: node.action,
-            note: node.note.clone(),
-            files: 0,
-            bytes: 0,
-            sample: None,
-        });
-        agg.files += 1;
-        agg.bytes += node.size;
-        if agg.sample.is_none() {
-            agg.sample = Some(node.path.clone());
+        let key = hit.rule_id.unwrap_or("unmatched");
+        let risk = hit.risk.unwrap_or(Risk::High);
+        if let Some(agg) = self.by_rule.get_mut(key) {
+            agg.files += 1;
+            agg.bytes += size;
+        } else {
+            self.by_rule.insert(
+                key.to_string(),
+                RuleAgg {
+                    rule_id: key.to_string(),
+                    agent: agent.to_string(),
+                    class: hit.class,
+                    risk,
+                    action: hit.action,
+                    note: hit.note.map(str::to_string),
+                    files: 1,
+                    bytes: size,
+                    sample: Some(path.to_path_buf()),
+                },
+            );
         }
 
-        match node.class {
-            DataClass::Asset | DataClass::Unknown => self.protected_bytes += node.size,
+        match hit.class {
+            DataClass::Asset | DataClass::Unknown => self.protected_bytes += size,
             DataClass::Ephemeral => {
                 // 未知风险按高处理，宁可让人看一眼
-                if node.risk.unwrap_or(Risk::High) <= Risk::Medium {
-                    self.safe_bytes += node.size;
+                if hit.risk.unwrap_or(Risk::High) <= Risk::Medium {
+                    self.safe_bytes += size;
                 } else {
-                    self.confirm_bytes += node.size;
+                    self.confirm_bytes += size;
                 }
             }
             // 用户数据与项目产物都不能一键释放，必须过人工
-            DataClass::Workspace | DataClass::Product => self.confirm_bytes += node.size,
+            DataClass::Workspace | DataClass::Product => self.confirm_bytes += size,
         }
 
-        if node.class == DataClass::Unknown && self.unmatched.len() < UNMATCHED_CAP {
-            self.unmatched.push(LargestItem {
-                path: node.path.clone(),
-                bytes: node.size,
-                class: node.class,
-                rule_id: None,
-            });
-        } else if node.class == DataClass::Unknown {
-            self.unmatched_truncated = true;
+        if hit.class == DataClass::Unknown {
+            if self.unmatched.len() < UNMATCHED_CAP {
+                self.unmatched.push(LargestItem {
+                    path: path.to_path_buf(),
+                    bytes: size,
+                    class: hit.class,
+                    rule_id: None,
+                });
+            } else {
+                self.unmatched_truncated = true;
+            }
         }
 
-        if matches!(node.class, DataClass::Ephemeral | DataClass::Product) {
-            self.push_largest(node);
+        if matches!(hit.class, DataClass::Ephemeral | DataClass::Product) {
+            self.push_largest_hit(path, size, hit.class, hit.rule_id);
         }
     }
 
-    fn push_largest(&mut self, node: &Node) {
-        let item = LargestItem {
-            path: node.path.clone(),
-            bytes: node.size,
+    /// 完整 `Node` 入口，保留给调用方与测试。
+    pub fn add(&mut self, node: &Node) {
+        let hit = crate::classifier::Hit {
             class: node.class,
-            rule_id: node.rule_id.clone(),
+            risk: node.risk,
+            action: node.action,
+            rule_id: node.rule_id.as_deref(),
+            note: node.note.as_deref(),
         };
+        self.add_hit(&node.agent, node.size, &hit, &node.path);
+    }
 
-        if self.largest.len() < LARGEST_CAP {
-            self.largest.push(item);
-            self.largest.sort_by_key(|i| std::cmp::Reverse(i.bytes));
-            return;
+    /// 先比体积再复制路径：榜单满之后，绝大多数文件都在这里被挡掉，
+    /// 老实现会先 clone 一个 PathBuf 才判断要不要留。
+    fn push_largest_hit(
+        &mut self,
+        path: &std::path::Path,
+        bytes: u64,
+        class: DataClass,
+        rule_id: Option<&str>,
+    ) {
+        if self.largest.len() >= LARGEST_CAP {
+            let smallest = self.largest.last().map(|i| i.bytes).unwrap_or(0);
+            if bytes <= smallest {
+                return;
+            }
         }
 
-        let smallest = self.largest.last().map(|i| i.bytes).unwrap_or(0);
-        if item.bytes <= smallest {
-            return;
-        }
-        self.largest.push(item);
+        self.largest.push(LargestItem {
+            path: path.to_path_buf(),
+            bytes,
+            class,
+            rule_id: rule_id.map(str::to_string),
+        });
         self.largest.sort_by_key(|i| std::cmp::Reverse(i.bytes));
         self.largest.truncate(LARGEST_CAP);
     }

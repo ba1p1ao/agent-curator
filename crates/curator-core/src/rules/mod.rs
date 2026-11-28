@@ -258,13 +258,29 @@ impl RuleLibrary {
         mtime_secs: Option<i64>,
         now_secs: i64,
     ) -> Option<&RuleEntry> {
-        let hit_indices = self.set.matches(abs_path);
-        if hit_indices.is_empty() {
+        let mut scratch = Vec::new();
+        self.match_best_into(abs_path, mtime_secs, now_secs, &mut scratch)
+    }
+
+    /// 同上，但复用调用方的缓冲区。
+    ///
+    /// `GlobSet::matches` 每次都会新分配一个 Vec，扫描十万个文件就是十万次分配；
+    /// 热路径改用 `matches_into` + 一个循环外复用的 scratch。
+    pub fn match_best_into<'a>(
+        &'a self,
+        abs_path: &str,
+        mtime_secs: Option<i64>,
+        now_secs: i64,
+        scratch: &mut Vec<usize>,
+    ) -> Option<&'a RuleEntry> {
+        scratch.clear();
+        self.set.matches_into(abs_path, scratch);
+        if scratch.is_empty() {
             return None;
         }
 
         let mut best: Option<&RuleEntry> = None;
-        for idx in hit_indices {
+        for &idx in scratch.iter() {
             let entry = &self.entries[idx];
 
             // 时间门槛不满足的规则直接放弃，让更宽松的规则接手

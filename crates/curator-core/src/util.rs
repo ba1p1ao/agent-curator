@@ -3,15 +3,28 @@
 use std::path::{Path, PathBuf};
 
 /// 统一成正斜杠绝对路径，并去掉 Windows 的 `\\?\` 前缀与末尾分隔符。
+/// 统一成正斜杠、去掉 Windows 扩展长度前缀、去掉尾部斜杠。
+///
+/// 这是扫描热路径上每个文件都要走一次的函数，所以刻意只做**一次分配**：
+/// 老实现先 `replace` 再 `to_string`，一条路径可能分配 2-3 次，
+/// 十万级文件时这部分开销相当可观。
 pub fn normalize_path(p: &Path) -> String {
-    let mut s = p.to_string_lossy().replace('\\', "/");
-    if let Some(rest) = s.strip_prefix("//?/") {
-        s = rest.to_string();
+    let lossy = p.to_string_lossy();
+    let src = lossy.as_ref();
+    // 扩展长度前缀两种写法都可能出现（`\\?\` 或已转义过的 `//?/`）
+    let src = src
+        .strip_prefix(r"\\?\")
+        .or_else(|| src.strip_prefix("//?/"))
+        .unwrap_or(src);
+
+    let mut out = String::with_capacity(src.len() + 1);
+    for ch in src.chars() {
+        out.push(if ch == '\\' { '/' } else { ch });
     }
-    if s.len() > 1 && s.ends_with('/') {
-        s = s.trim_end_matches('/').to_string();
+    while out.len() > 1 && out.ends_with('/') {
+        out.pop();
     }
-    s
+    out
 }
 
 /// 用户主目录。优先 `dirs`，回退 `USERPROFILE`。
