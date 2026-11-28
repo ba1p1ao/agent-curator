@@ -1,0 +1,133 @@
+# ZCode 数据目录规则
+#
+# 本机 329 MB：cli/ 是 CLI 与插件（275MB），v2/ 是桌面端运行数据。
+# v2/crash 有 33MB 崩溃转储，属于典型可回收垃圾。
+
+schema_version: 1
+agent: zcode
+display_name: ZCode
+processes: ["zcode", "zcode.exe"]
+
+roots:
+  - id: home
+    path: "~/.zcode"
+    probe: ["skills", "v2"]
+    note: ZCode 数据目录
+
+rules:
+  # ---------- 可安全释放 ----------
+  - id: zcode.ephemeral.crash
+    path: "~/.zcode/v2/crash/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 崩溃转储，只在反馈问题时有用
+
+  - id: zcode.ephemeral.logs
+    path: "~/.zcode/v2/logs/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: zcode.ephemeral.cli-log
+    path: "~/.zcode/cli/log/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: zcode.ephemeral.image-cache
+    path: "~/.zcode/cli/image-cache/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: zcode.ephemeral.tasks-index
+    path: "~/.zcode/v2/tasks-index.sqlite"
+    class: ephemeral
+    risk: medium
+    action: review
+    note: 任务索引，删了会重建但短期内搜索变慢
+
+  # ---------- 需人工确认 ----------
+  - id: zcode.product.plugins
+    path: "~/.zcode/cli/plugins/**"
+    class: product
+    risk: medium
+    action: review
+    note: 已装插件，占本目录一半体积，可从市场重装
+
+  - id: zcode.review.rollout
+    path: "~/.zcode/cli/rollout/**"
+    class: product
+    risk: medium
+    action: review
+
+  - id: zcode.review.artifacts
+    path: "~/.zcode/cli/artifacts/**"
+    class: product
+    risk: medium
+    action: review
+
+  - id: zcode.review.db
+    path: "~/.zcode/cli/db/**"
+    class: workspace
+    risk: high
+    action: review
+    note: 会话数据库
+
+  - id: zcode.review.checkpoints
+    path: "~/.zcode/v2/checkpoints/**"
+    class: product
+    risk: high
+    action: review
+    note: 编辑检查点，删了无法回滚
+
+  - id: zcode.review.backup
+    path: "~/.zcode/backup/**"
+    class: product
+    risk: high
+    action: review
+
+  - id: zcode.review.workspace
+    path: "~/.zcode/workspace/**"
+    class: workspace
+    risk: high
+    action: review
+
+  # ---------- 资产 ----------
+  - id: zcode.asset.agents
+    path: "~/.zcode/cli/agents/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: agent 定义
+
+  - id: zcode.asset.exec
+    path: "~/.zcode/cli/exec/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: zcode.asset.skills
+    path: "~/.zcode/skills/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: zcode.asset.plugin-workspace
+    path: "~/.zcode/plugin-workspace/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: zcode.asset.v2-config
+    path: "~/.zcode/v2/config.json"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: zcode.asset.v2-runtime
+    path: "~/.zcode/v2/runtime/**"
+    class: asset
+    risk: critical
+    action: protect

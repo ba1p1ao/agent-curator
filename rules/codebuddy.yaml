@@ -1,0 +1,29 @@
+# CodeBuddy（腾讯）数据目录规则
+#
+# 本机只有 277KB，全是日志与诊断。写规则是为了分类准确，
+# 而不是真的能腾出空间。
+
+schema_version: 1
+agent: codebuddy
+display_name: CodeBuddy
+processes: ["codebuddy", "codebuddy.exe"]
+
+roots:
+  - id: home
+    path: "~/.codebuddy"
+    probe: ["logs", "diagnostics"]
+    note: CodeBuddy 数据目录
+
+rules:
+  - id: buddy.ephemeral.logs
+    path: "~/.codebuddy/logs/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: buddy.ephemeral.diagnostics
+    path: "~/.codebuddy/diagnostics/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 诊断数据，只在反馈问题时有用

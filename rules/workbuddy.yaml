@@ -247,3 +247,18 @@ rules:
     class: ephemeral
     risk: medium
     action: review
+
+  # ---------- 可重新下发的资源 ----------
+  - id: workbuddy.product.threat-db
+    path: "~/.workbuddy/security/threat-database/**"
+    class: product
+    risk: medium
+    action: review
+    note: 威胁情报库，随规则更新重新下发
+
+  - id: workbuddy.product.external-packages
+    path: "~/.workbuddy/external-packages/**"
+    class: product
+    risk: medium
+    action: review
+    note: 外部工具包（pdf-cli 等），可按需重新下载

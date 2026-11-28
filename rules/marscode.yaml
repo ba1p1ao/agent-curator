@@ -1,0 +1,67 @@
+# MarsCode（豆包 MarsCode）数据目录规则
+#
+# 本机 423 MB，其中 387 MB 是 ai-chat 会话数据 —— 那是用户内容不是垃圾。
+
+schema_version: 1
+agent: marscode
+display_name: MarsCode
+processes: []
+
+roots:
+  - id: home
+    path: "~/.marscode"
+    probe: ["config.json", "ai-chat", "builtin"]
+    note: MarsCode 数据目录
+
+rules:
+  - id: mars.ephemeral.logs
+    path: "~/.marscode/logs/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: mars.review.ai-chat
+    path: "~/.marscode/ai-chat/**"
+    class: workspace
+    risk: high
+    action: review
+    note: 对话历史，占本目录 90% 以上体积
+
+  - id: mars.asset.builtin
+    path: "~/.marscode/builtin/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 内置资源，删了功能残缺
+
+  - id: mars.asset.skills
+    path: "~/.marscode/builtin_skills/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: mars.asset.server-main
+    path: "~/.marscode/server-main/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: mars.asset.config
+    path: "~/.marscode/config.json"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: mars.asset.mcp
+    path: "~/.marscode/vscode.mcp.config.json"
+    class: asset
+    risk: critical
+    action: protect
+
+  # ---------- 隐藏目录 ----------
+  - id: mars.product.ckg
+    path: "~/.marscode/.ckg/**"
+    class: product
+    risk: medium
+    action: review
+    note: 代码知识图谱向量库，可重建但要全量重新索引

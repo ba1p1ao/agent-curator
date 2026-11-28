@@ -1,0 +1,126 @@
+# 千问办公（QwenWorkCN）数据目录规则
+#
+# 本机 1.2 GB，是国产 agent 里最大的一块。
+# 结构分成四层：程序本体（bin）、用户内容（workspace/projects）、
+# 可重建（cache/logs/tmp）、需确认（file-history 回滚历史）。
+
+schema_version: 1
+agent: qwen-office
+display_name: 千问办公
+processes: []
+
+roots:
+  - id: home
+    path: "~/.qwenworkcn"
+    probe: ["installation_id", "host-agent-responses.db", "bin"]
+    note: 千问办公桌面端数据目录
+
+rules:
+  # ---------- 可安全释放 ----------
+  - id: qwen.ephemeral.cache
+    path: "~/.qwenworkcn/cache/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 模型与资源缓存，可重新下载
+
+  - id: qwen.ephemeral.logs
+    path: "~/.qwenworkcn/logs/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: qwen.ephemeral.tmp
+    path: "~/.qwenworkcn/tmp/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  # ---------- 需人工确认 ----------
+  - id: qwen.review.workspace
+    path: "~/.qwenworkcn/workspace/**"
+    class: workspace
+    risk: high
+    action: review
+    note: 用户工作区，可能含未导出的成果
+
+  - id: qwen.review.projects
+    path: "~/.qwenworkcn/projects/**"
+    class: workspace
+    risk: high
+    action: review
+    note: 项目数据
+
+  - id: qwen.review.file-history
+    path: "~/.qwenworkcn/file-history/**"
+    class: product
+    risk: high
+    action: review
+    note: 编辑历史，删了无法回滚
+
+  - id: qwen.review.shell-snapshots
+    path: "~/.qwenworkcn/shell-snapshots/**"
+    class: product
+    risk: medium
+    action: review
+
+  - id: qwen.review.responses-db
+    path: "~/.qwenworkcn/host-agent-responses.db"
+    class: workspace
+    risk: high
+    action: review
+    note: agent 响应记录数据库
+
+  # ---------- 资产：硬保护 ----------
+  - id: qwen.asset.bin
+    path: "~/.qwenworkcn/bin/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 程序运行时本体，删了产品直接坏掉
+
+  - id: qwen.asset.skills
+    path: "~/.qwenworkcn/skills/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: qwen.asset.plugins
+    path: "~/.qwenworkcn/plugins/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: qwen.asset.commands
+    path: "~/.qwenworkcn/commands/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: qwen.asset.awareness
+    path: "~/.qwenworkcn/awareness/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: qwen.asset.key
+    path: "~/.qwenworkcn/engine-maas-key.dat"
+    class: asset
+    risk: critical
+    action: protect
+    note: 凭据文件，删了要重新登录
+
+  # ---------- 隐藏目录（实测占比不小，容易漏） ----------
+  - id: qwen.review.harness
+    path: "~/.qwenworkcn/.harness/**"
+    class: workspace
+    risk: high
+    action: review
+    note: flash-cli 的工作数据库（qwenwork.db），227MB，属用户产出
+
+  - id: qwen.asset.dot-bin
+    path: "~/.qwenworkcn/.bin/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 运行时 dll，删了功能异常

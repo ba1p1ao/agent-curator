@@ -1,0 +1,123 @@
+# Qoder（阿里 AI IDE）数据目录规则
+#
+# 本机 56 MB，plugins 39MB 占大头；另有 .qoder-cli / .qoder-cn 两个附属目录，
+# 体积都在百 KB 级，一并纳入以免算作"未识别"。
+
+schema_version: 1
+agent: qoder
+display_name: Qoder
+processes: ["qoder", "qoder.exe"]
+
+roots:
+  - id: home
+    path: "~/.qoder"
+    probe: ["installation_id", "app"]
+    note: Qoder 主数据目录
+
+  - id: cli
+    path: "~/.qoder-cli"
+    probe: ["ai-stats"]
+    note: Qoder CLI 统计目录
+
+  - id: cn
+    path: "~/.qoder-cn"
+    probe: ["entry"]
+    note: Qoder 国内版入口目录
+
+rules:
+  # ---------- 可安全释放 ----------
+  - id: qoder.ephemeral.logs
+    path: "~/.qoder/logs/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: qoder.ephemeral.tmp
+    path: "~/.qoder/tmp/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: qoder.ephemeral.ipc
+    path: "~/.qoder/ipc/**"
+    class: ephemeral
+    risk: medium
+    action: skip-if-locked
+    note: 进程间通信的临时件，运行时必须跳过
+
+  # ---------- 需人工确认 ----------
+  - id: qoder.product.plugins
+    path: "~/.qoder/plugins/**"
+    class: product
+    risk: medium
+    action: review
+    note: 已装插件，可从市场重装
+
+  - id: qoder.review.projects
+    path: "~/.qoder/projects/**"
+    class: workspace
+    risk: high
+    action: review
+
+  - id: qoder.review.file-history
+    path: "~/.qoder/file-history/**"
+    class: product
+    risk: high
+    action: review
+    note: 编辑历史，删了无法回滚
+
+  # ---------- 资产 ----------
+  - id: qoder.asset.bin
+    path: "~/.qoder/bin/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: qoder.asset.app
+    path: "~/.qoder/app/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: qoder.asset.entry
+    path: "~/.qoder/entry/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: qoder.asset.memory
+    path: "~/.qoder/memory/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: qoder.asset.skills
+    path: "~/.qoder/skills/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: qoder.asset.knowledge
+    path: "~/.qoder/qoder-knowledge/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 代码库知识索引，重建要重新全量分析
+
+  - id: qoder.asset.security
+    path: "~/.qoder/security-resources/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: qoder.asset.cli-stats
+    path: "~/.qoder-cli/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: qoder.asset.cn-entry
+    path: "~/.qoder-cn/**"
+    class: asset
+    risk: critical
+    action: protect

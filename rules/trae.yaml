@@ -1,0 +1,106 @@
+# Trae（字节 AI IDE）数据目录规则
+#
+# 同时覆盖国内版 .trae-cn 与国际版 .trae。
+# 本机 354 MB，其中 324 MB 是 extensions —— 可从插件市场重装，属于"需确认"。
+
+schema_version: 1
+agent: trae
+display_name: Trae
+processes: ["trae", "trae.exe", "trae-cn.exe"]
+
+roots:
+  - id: cn
+    path: "~/.trae-cn"
+    probe: ["argv.json", "extensions"]
+    note: Trae 国内版
+
+  - id: intl
+    path: "~/.trae"
+    probe: ["argv.json", "extensions"]
+    note: Trae 国际版
+
+rules:
+  # ---------- 需人工确认 ----------
+  - id: trae.product.extensions
+    path: "~/.trae-cn/extensions/**"
+    class: product
+    risk: medium
+    action: review
+    note: 已安装扩展，可从市场重装
+
+  - id: trae.product.extensions-intl
+    path: "~/.trae/extensions/**"
+    class: product
+    risk: medium
+    action: review
+
+  - id: trae.review.worktrees
+    path: "~/.trae-cn/worktrees/**"
+    class: workspace
+    risk: high
+    action: review
+    note: agent 创建的工作树，可能含未合并的改动
+
+  # ---------- 可安全释放 ----------
+  - id: trae.ephemeral.screenshots
+    path: "~/.trae-cn/trae-browser-screenshots/**"
+    class: ephemeral
+    risk: low
+    action: clean
+    note: 浏览器 agent 的截图缓存
+
+  # ---------- 资产 ----------
+  - id: trae.asset.builtin
+    path: "~/.trae-cn/builtin/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: trae.asset.builtin-skills
+    path: "~/.trae-cn/builtin_skills/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: trae.asset.skills
+    path: "~/.trae-cn/skills/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: trae.asset.skill-config
+    path: "~/.trae-cn/skill-config.json"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: trae.asset.memory
+    path: "~/.trae-cn/memory/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: agent 记忆，删了要重新培养
+
+  - id: trae.asset.mcps
+    path: "~/.trae-cn/mcps/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: trae.asset.permission
+    path: "~/.trae-cn/permission/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: trae.asset.toolhost
+    path: "~/.trae-cn/toolhost/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: trae.asset.argv
+    path: "~/.trae-cn/argv.json"
+    class: asset
+    risk: critical
+    action: protect

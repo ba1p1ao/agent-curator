@@ -1,0 +1,149 @@
+# Kimi（月之暗面）数据目录规则
+#
+# 本机 .kimi-work 142MB + .kimi-webbridge 9.8MB，两者都只有 bin，
+# 属于程序本体，没有可清理的内容。AppData 下的桌面端才带缓存。
+
+schema_version: 1
+agent: kimi
+display_name: Kimi
+processes: ["kimi", "kimi.exe"]
+
+roots:
+  - id: work
+    path: "~/.kimi-work"
+    probe: ["bin"]
+    note: Kimi 工作区（程序本体）
+
+  - id: webbridge
+    path: "~/.kimi-webbridge"
+    probe: ["identity.json"]
+    note: Kimi 浏览器桥接守护进程
+
+  - id: desktop
+    path: "~/AppData/Roaming/kimi-desktop"
+    probe: ["Cache", "Local Storage"]
+    note: Kimi 桌面端 Electron 用户数据
+
+rules:
+  # ---------- 可安全释放 ----------
+  - id: kimi.ephemeral.cache
+    path: "~/AppData/Roaming/kimi-desktop/Cache/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: kimi.ephemeral.code-cache
+    path: "~/AppData/Roaming/kimi-desktop/Code Cache/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: kimi.ephemeral.gpu-cache
+    path: "~/AppData/Roaming/kimi-desktop/GPUCache/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: kimi.ephemeral.dawn-cache
+    path: "~/AppData/Roaming/kimi-desktop/DawnCache/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: kimi.ephemeral.crashpad
+    path: "~/AppData/Roaming/kimi-desktop/Crashpad/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  # ---------- 用户数据 ----------
+  - id: kimi.review.local-storage
+    path: "~/AppData/Roaming/kimi-desktop/Local Storage/**"
+    class: workspace
+    risk: medium
+    action: review
+    note: 登录态与本地设置
+
+  # ---------- 资产 ----------
+  - id: kimi.asset.work-bin
+    path: "~/.kimi-work/bin/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 程序运行时，删了 Kimi 无法启动
+
+  - id: kimi.asset.bridge-bin
+    path: "~/.kimi-webbridge/bin/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: kimi.asset.identity
+    path: "~/.kimi-webbridge/identity.json"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: kimi.asset.daemon-pid
+    path: "~/.kimi-webbridge/daemon.pid"
+    class: asset
+    risk: high
+    action: protect
+    note: 守护进程标识，手工删会导致状态错乱
+
+  # ---------- Kimi 桌面端内置运行时（实测 1.0 GB） ----------
+  - id: kimi.asset.daimon-bundle
+    path: "~/AppData/Roaming/kimi-desktop/daimon-bundle/**"
+    class: asset
+    risk: critical
+    action: protect
+    note: 自带运行时（git / dll / 内置技能模板），698MB，删了 Kimi 起不来
+
+  - id: kimi.product.daimon-runtime
+    path: "~/AppData/Roaming/kimi-desktop/daimon-share/daimon/runtime/**"
+    class: product
+    risk: medium
+    action: review
+    note: 共享运行时，286MB，可由 provision 流程重新拉取
+
+  - id: kimi.asset.daimon-skills
+    path: "~/AppData/Roaming/kimi-desktop/daimon-share/daimon/skills/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: kimi.asset.daimon-agents
+    path: "~/AppData/Roaming/kimi-desktop/daimon-share/daimon/agents/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: kimi.asset.daimon-plugins
+    path: "~/AppData/Roaming/kimi-desktop/daimon-share/daimon/plugin-packages/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: kimi.asset.daimon-config
+    path: "~/AppData/Roaming/kimi-desktop/daimon-share/daimon/config.json"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: kimi.asset.share-config
+    path: "~/AppData/Roaming/kimi-desktop/daimon-share/config.toml"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: kimi.ephemeral.daimon-logs
+    path: "~/AppData/Roaming/kimi-desktop/daimon-share/daimon/logs/**"
+    class: ephemeral
+    risk: low
+    action: clean
+
+  - id: kimi.ephemeral.desktop-logs
+    path: "~/AppData/Roaming/kimi-desktop/logs/**"
+    class: ephemeral
+    risk: low
+    action: clean

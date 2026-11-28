@@ -1,0 +1,121 @@
+# DSH（DeepSeek 桌面 agent）数据目录规则
+#
+# 本机 955 MB，其中 668 MB 是 profiles/desktop/node_modules ——
+# 由 pnpm-lock.yaml 锁定，理论上可重建，但重装要联网，所以归"需确认"而不是"可清理"。
+
+schema_version: 1
+agent: dsh
+display_name: DSH
+processes: []
+
+roots:
+  - id: home
+    path: "~/.dsh"
+    probe: ["sessions", "profiles"]
+    note: DSH 数据目录
+
+rules:
+  # ---------- 可重建（体积最大的一块） ----------
+  - id: dsh.product.profile-modules
+    path: "~/.dsh/profiles/desktop/node_modules/**"
+    class: product
+    risk: medium
+    action: review
+    note: 桌面 profile 的依赖树，可由 pnpm-lock.yaml 重装；删了下次启动要联网拉取
+
+  - id: dsh.product.runtimes
+    path: "~/.dsh/dsh-runtimes/**"
+    class: product
+    risk: medium
+    action: review
+    note: 运行时环境，可重新下载
+
+  # ---------- 需人工确认 ----------
+  - id: dsh.review.sessions
+    path: "~/.dsh/sessions/**"
+    class: workspace
+    risk: high
+    action: review
+    note: 会话记录
+
+  - id: dsh.review.attachments
+    path: "~/.dsh/attachments/**"
+    class: workspace
+    risk: high
+    action: review
+    note: 对话附件
+
+  - id: dsh.review.market
+    path: "~/.dsh/dsh-market/**"
+    class: product
+    risk: medium
+    action: review
+    note: 市场下载的插件包
+
+  # ---------- 资产 ----------
+  - id: dsh.asset.profile-config
+    path: "~/.dsh/profiles/desktop/*.yaml"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: dsh.asset.profile-config-yml
+    path: "~/.dsh/profiles/desktop/*.yml"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: dsh.asset.profile-json
+    path: "~/.dsh/profiles/desktop/*.json"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: dsh.asset.profile-lock
+    path: "~/.dsh/profiles/desktop/pnpm-lock.yaml"
+    class: asset
+    risk: critical
+    action: protect
+    note: 依赖锁定文件，删了 node_modules 就无法精确复原
+
+  - id: dsh.asset.storages
+    path: "~/.dsh/storages/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: dsh.asset.settings
+    path: "~/.dsh/settings.yaml*"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: dsh.asset.channel-pack
+    path: "~/.dsh/channel-pack/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: dsh.asset.llm-deepseek
+    path: "~/.dsh/llm-deepseek/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: dsh.asset.gateway
+    path: "~/.dsh/openai-gateway/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: dsh.asset.free-model
+    path: "~/.dsh/our-free-model/**"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: dsh.asset.patch
+    path: "~/.dsh/cordis.patch.yml"
+    class: asset
+    risk: critical
+    action: protect

@@ -218,3 +218,26 @@ rules:
     risk: low
     action: clean
     note: 插件市场与 bundled 插件的临时解包目录，会自动重新下载
+
+  # ---------- sqlite 子目录（此前只覆盖了根目录的 *.sqlite*） ----------
+  - id: codex.asset.sqlite-subdir-wal
+    path: "~/.codex/sqlite/*.db-wal"
+    class: asset
+    risk: critical
+    action: protect
+    note: >-
+      WAL 里可能有尚未 checkpoint 的事务。进程没运行不代表它是空的，
+      残留的 WAL 恰恰是"上次没干净退出"，更不该删。
+
+  - id: codex.asset.sqlite-subdir-shm
+    path: "~/.codex/sqlite/*.db-shm"
+    class: asset
+    risk: critical
+    action: protect
+
+  - id: codex.review.sqlite-subdir-db
+    path: "~/.codex/sqlite/*.db"
+    class: workspace
+    risk: high
+    action: review
+    note: dev 模式的 sqlite 主库

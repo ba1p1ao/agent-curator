@@ -59,6 +59,59 @@ pub const SOURCES: &[(&str, &str)] = &[
         )),
     ),
     (
+        "qwen-office.yaml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../rules/qwen-office.yaml"
+        )),
+    ),
+    (
+        "dsh.yaml",
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../rules/dsh.yaml")),
+    ),
+    (
+        "marscode.yaml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../rules/marscode.yaml"
+        )),
+    ),
+    (
+        "trae.yaml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../rules/trae.yaml"
+        )),
+    ),
+    (
+        "zcode.yaml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../rules/zcode.yaml"
+        )),
+    ),
+    (
+        "qoder.yaml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../rules/qoder.yaml"
+        )),
+    ),
+    (
+        "kimi.yaml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../rules/kimi.yaml"
+        )),
+    ),
+    (
+        "codebuddy.yaml",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../rules/codebuddy.yaml"
+        )),
+    ),
+    (
         "generic.yaml",
         include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -78,7 +131,7 @@ mod tests {
         assert!(lib.len() > 50, "内置规则数量异常: {}", lib.len());
         // 每新增一份 rules/*.yaml 都必须登记到 SOURCES，否则发行版里会缺规则。
         // 这条断言就是防止"加了文件忘了注册"。
-        assert_eq!(SOURCES.len(), 8, "SOURCES 与 rules/ 目录下的文件数不一致");
+        assert_eq!(SOURCES.len(), 16, "SOURCES 与 rules/ 目录下的文件数不一致");
         for agent in [
             "claude-code",
             "codex",
@@ -87,6 +140,14 @@ mod tests {
             "kiro",
             "opencode",
             "continue",
+            "qwen-office",
+            "dsh",
+            "marscode",
+            "trae",
+            "zcode",
+            "qoder",
+            "kimi",
+            "codebuddy",
         ] {
             assert!(
                 lib.agents.iter().any(|(id, _)| id == agent),
