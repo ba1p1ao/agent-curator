@@ -140,7 +140,8 @@ async function loadAgents() {
     const list = await api.listAgents();
     agents.value = list.filter((a) => a.installed && a.hasRules);
     uncovered.value = list.filter((a) => a.installed && !a.hasRules).map((a) => a.name);
-    selectedAgents.value = agents.value.map((a) => a.id);
+    // 默认空选：清理范围必须由用户显式指定，不替他做"全部"的决定
+    selectedAgents.value = [];
   } catch (e) {
     err.value = errorText(e);
   }
@@ -270,7 +271,9 @@ function discardPlan() {
         <span v-if="planning" class="spinner" />
         {{ planning ? " 生成中…" : plan ? "重新生成计划" : "生成清理计划" }}
       </button>
-      <span v-if="nothingSelected" class="faint">请至少选择一个 agent</span>
+      <span v-if="nothingSelected" class="faint">
+        请在「处理范围」里至少选择一个 agent，或点「全选」
+      </span>
       <span v-if="plan" class="muted">
         共 {{ thousands(plan.items.length) }} 项 / {{ humanBytes(planBytes) }}
       </span>
