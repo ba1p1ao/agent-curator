@@ -56,6 +56,11 @@ export interface Plan {
   skipped: SkippedItem[];
 }
 
+export interface PlanResponse {
+  planId: string;
+  plan: Plan;
+}
+
 export interface ApplyResult {
   runId: string;
   moved: number;
@@ -126,8 +131,9 @@ export const api = {
   rulesInfo: () =>
     invoke<{ count: number; agents: [string, string][]; roots: number }>("rules_info"),
   scan: () => invoke<ScanResult>("scan_all"),
-  plan: (opts: CleanOptions) => invoke<Plan>("plan_clean", { opts }),
-  apply: (opts: CleanOptions) => invoke<ApplyResult>("apply_clean", { opts }),
+  plan: (opts: CleanOptions) => invoke<PlanResponse>("plan_clean", { opts }),
+  apply: (planId: string, indices: number[]) =>
+    invoke<ApplyResult>("apply_clean", { planId, indices }),
   listAgents: () => invoke<AgentListItem[]>("list_agents"),
   listRuns: () => invoke<RunInfo[]>("list_runs"),
   restore: (runId: string) => invoke<RestoreResult>("restore_run", { runId }),

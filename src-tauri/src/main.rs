@@ -18,6 +18,8 @@ compile_error!(
 );
 
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use curator_core::agents as agent_probe;
@@ -30,6 +32,7 @@ use curator_core::rules::{RuleLibrary, RuleSource};
 use curator_core::scanner::{self, ScanOptions, ScanTarget};
 use curator_core::util::home_dir;
 use serde::{Deserialize, Serialize};
+use tauri::State;
 
 // ---------------------------------------------------------------- DTO
 
@@ -159,6 +162,32 @@ struct RulesInfoDto {
     agents: Vec<(String, String)>,
     roots: usize,
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlanResponse {
+    /// 本次计划的标识，执行时必须原样带回
+    plan_id: String,
+    plan: Plan,
+}
+
+/// 缓存最近一次计划。
+///
+/// 为什么要缓存：界面上的勾选是按条目下标来的，只有拿到"同一份计划"才有意义。
+/// 若执行时重新扫描，文件可能已经变了，下标就会错位——那是最危险的错位。
+/// 所以执行只针对缓存里的这份计划，超过 30 分钟即视为过期。
+struct CachedPlan {
+    id: String,
+    plan: Plan,
+    created: Instant,
+}
+
+#[derive(Default)]
+struct AppState {
+    plan: Mutex<Option<CachedPlan>>,
+}
+
+const PLAN_TTL: Duration = Duration::from_secs(30 * 60);
 
 // ---------------------------------------------------------------- 路径
 
@@ -308,11 +337,25 @@ fn do_scan() -> Result<ScanDto> {
 // ---------------------------------------------------------------- clean
 
 #[tauri::command]
-async fn plan_clean(opts: CleanOptions) -> Result<Plan, String> {
-    tauri::async_runtime::spawn_blocking(move || do_plan(&opts))
+async fn plan_clean(
+    state: State<'_, AppState>,
+    opts: CleanOptions,
+) -> Result<PlanResponse, String> {
+    let plan = tauri::async_runtime::spawn_blocking(move || do_plan(&opts))
         .await
         .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    let plan_id = chrono::Local::now().format("%Y%m%d%H%M%S%3f").to_string();
+    {
+        let mut guard = state.plan.lock().map_err(|e| e.to_string())?;
+        *guard = Some(CachedPlan {
+            id: plan_id.clone(),
+            plan: plan.clone(),
+            created: Instant::now(),
+        });
+    }
+    Ok(PlanResponse { plan_id, plan })
 }
 
 fn do_plan(opts: &CleanOptions) -> Result<Plan> {
@@ -338,18 +381,41 @@ fn do_plan(opts: &CleanOptions) -> Result<Plan> {
 }
 
 #[tauri::command]
-async fn apply_clean(opts: CleanOptions) -> Result<ApplyDto, String> {
-    tauri::async_runtime::spawn_blocking(move || do_apply(&opts))
+async fn apply_clean(
+    state: State<'_, AppState>,
+    plan_id: String,
+    indices: Vec<usize>,
+) -> Result<ApplyDto, String> {
+    // 取出缓存计划并裁剪。整个过程不重新扫描：
+    // 勾选下标只对"同一份计划"有效，重扫会让下标错位。
+    let plan = {
+        let guard = state.plan.lock().map_err(|e| e.to_string())?;
+        let cached = guard.as_ref().ok_or("计划已失效，请重新生成后再执行")?;
+        if cached.id != plan_id {
+            return Err("计划已更新，请以最新生成的计划为准".into());
+        }
+        if cached.created.elapsed() > PLAN_TTL {
+            return Err("计划已超过 30 分钟，文件可能已变化，请重新生成".into());
+        }
+        cached.plan.retain(&indices)
+    };
+
+    if plan.is_empty() {
+        return Err("没有勾选任何条目".into());
+    }
+
+    let dto = tauri::async_runtime::spawn_blocking(move || do_apply_plan(plan))
         .await
         .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    if let Ok(mut guard) = state.plan.lock() {
+        *guard = None;
+    }
+    Ok(dto)
 }
 
-fn do_apply(opts: &CleanOptions) -> Result<ApplyDto> {
-    let plan = do_plan(opts)?;
-    if plan.is_empty() {
-        bail!("计划为空，没有可执行的内容");
-    }
+fn do_apply_plan(plan: Plan) -> Result<ApplyDto> {
     let quarantine = Quarantine::new(bin_dir());
     let report = quarantine.apply(&plan)?;
     Ok(ApplyDto {
@@ -604,6 +670,7 @@ async fn list_agents() -> Result<Vec<AgentListItem>, String> {
 
 fn main() {
     tauri::Builder::default()
+        .manage(AppState::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             scan_all,

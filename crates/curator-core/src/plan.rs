@@ -69,6 +69,18 @@ impl Plan {
         self.items.is_empty()
     }
 
+    /// 只保留指定下标的条目，返回新计划。
+    ///
+    /// 下标来自同一次 `build` 产出的 `PlanItem.index`，越界下标直接忽略。
+    /// 这是界面「条目级勾选」的落点：用户选了什么，执行器就只看到什么——
+    /// 筛选发生在 `Plan` 这一层，而不是在文件操作层，避免"顺手多删"。
+    pub fn retain(&self, keep: &[usize]) -> Plan {
+        let set: std::collections::HashSet<usize> = keep.iter().copied().collect();
+        let mut filtered = self.clone();
+        filtered.items.retain(|item| set.contains(&item.index));
+        filtered
+    }
+
     /// 按规则汇总：规则 id -> (文件数, 字节数)
     pub fn by_rule(&self) -> BTreeMap<String, (u64, u64)> {
         let mut map: BTreeMap<String, (u64, u64)> = BTreeMap::new();
@@ -274,5 +286,23 @@ mod tests {
         assert_eq!(plan.items[0].bytes, 1000);
         assert_eq!(plan.items[0].index, 1);
         assert_eq!(plan.items[1].index, 2);
+    }
+    #[test]
+    fn retain_keeps_only_selected_indices() {
+        let nodes = vec![
+            node("C:/a", 100, DataClass::Ephemeral, Action::Clean, "demo"),
+            node("C:/b", 200, DataClass::Ephemeral, Action::Clean, "demo"),
+            node("C:/c", 300, DataClass::Ephemeral, Action::Clean, "demo"),
+        ];
+        let plan = build(&nodes, &[], &PlanOptions::default());
+        assert_eq!(plan.items.len(), 3);
+
+        let filtered = plan.retain(&[plan.items[1].index]);
+        assert_eq!(filtered.items.len(), 1);
+        assert_eq!(filtered.items[0].path, plan.items[1].path);
+        assert_eq!(filtered.total_bytes(), plan.items[1].bytes);
+
+        // 越界下标不应影响结果，也不应 panic
+        assert!(plan.retain(&[9999]).is_empty());
     }
 }
