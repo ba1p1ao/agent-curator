@@ -1019,6 +1019,17 @@ fn write_file(path: &Path, content: &str) -> Result<()> {
 
 /// 交互确认。读不到输入（非交互环境）一律视为取消。
 fn confirm(prompt: &str) -> Result<bool> {
+    // 非交互环境直接报错，不要傻等 stdin。
+    // 之前 stdin 是被管道接住的（没有 EOF），read_line 会一直阻塞，
+    // 表现为"命令挂死"，比报错难排查得多。
+    use std::io::IsTerminal;
+    if !io::stdin().is_terminal() {
+        bail!(
+            "当前不是交互终端，无法确认。
+需要执行请加 --yes；只想查看计划则不要加 --apply。"
+        );
+    }
+
     eprint!("{}", prompt);
     io::stderr().flush().ok();
     let mut line = String::new();
