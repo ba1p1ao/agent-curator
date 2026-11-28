@@ -131,7 +131,8 @@ const PROBES: &[Probe] = &[
         id: "trae",
         name: "Trae",
         bins: &["trae"],
-        dirs: &["~/.trae"],
+        // 国际版 .trae / 国内版 .trae-cn 都算
+        dirs: &["~/.trae", "~/.trae-cn", "~/AppData/Roaming/Trae CN"],
         note: "字节 AI 编辑器",
     },
     Probe {
@@ -140,6 +141,67 @@ const PROBES: &[Probe] = &[
         bins: &["kiro"],
         dirs: &["~/.kiro"],
         note: "AWS AI 编辑器",
+    },
+    // ---------- 国产 agent ----------
+    // 路径来自本机实际探测：命令行基本都不在 PATH 里，
+    // 靠配置目录判定安装状态，比猜命令可靠。
+    Probe {
+        id: "kimi",
+        name: "Kimi",
+        bins: &["kimi"],
+        dirs: &[
+            "~/.kimi-work",
+            "~/.kimi-webbridge",
+            "~/AppData/Roaming/kimi-desktop",
+        ],
+        note: "月之暗面 Kimi 桌面端",
+    },
+    Probe {
+        id: "dsh",
+        name: "DSH",
+        bins: &["dsh"],
+        dirs: &["~/.dsh", "~/AppData/Roaming/DSH Desktop"],
+        note: "DeepSeek 桌面 agent（目录内含 llm-deepseek / openai-gateway）",
+    },
+    Probe {
+        id: "qwen-office",
+        name: "千问办公",
+        bins: &[],
+        dirs: &["~/.qwenworkcn", "~/AppData/Roaming/QwenWorkCN"],
+        note: "阿里千问办公桌面端",
+    },
+    Probe {
+        id: "qoder",
+        name: "Qoder",
+        bins: &["qoder"],
+        dirs: &[
+            "~/.qoder",
+            "~/.qoder-cli",
+            "~/.qoder-cn",
+            "~/AppData/Roaming/Qoder",
+        ],
+        note: "阿里 AI IDE（projects / memory / qoder-knowledge）",
+    },
+    Probe {
+        id: "zcode",
+        name: "ZCode",
+        bins: &["zcode"],
+        dirs: &["~/.zcode", "~/AppData/Roaming/ZCode"],
+        note: "带 skills / plugin-workspace 的编码 agent",
+    },
+    Probe {
+        id: "marscode",
+        name: "MarsCode",
+        bins: &["marscode"],
+        dirs: &["~/.marscode"],
+        note: "豆包 MarsCode",
+    },
+    Probe {
+        id: "codebuddy",
+        name: "CodeBuddy",
+        bins: &["codebuddy"],
+        dirs: &["~/.codebuddy"],
+        note: "腾讯 CodeBuddy",
     },
 ];
 
